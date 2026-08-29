@@ -88,6 +88,11 @@
 
 * { box-sizing: border-box; }
 
+/* display を指定したクラスはブラウザ既定の [hidden]{display:none} に
+   勝ってしまい、隠したつもりの要素が場所を取り続ける。
+   実際それで表とチャートの行が 24px ずれていた。 */
+[hidden] { display: none !important; }
+
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 12.5px/1.5 "Hiragino Sans", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
@@ -117,6 +122,9 @@ button:disabled { opacity: .4; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 button.primary:hover { filter: brightness(1.1); }
 button.icon { padding: 4px 8px; font-family: var(--mono); }
+button[aria-pressed="true"] {
+  background: var(--accent-bg); border-color: var(--accent-br); color: var(--accent); font-weight: 700;
+}
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .tabs { display: flex; gap: 2px; }
@@ -148,9 +156,19 @@ button.icon { padding: 4px 8px; font-family: var(--mono); }
 /* --- 分割ペイン（左＝表 / 右＝ガント） --------------------- */
 .split { display: flex; height: auto; max-height: 62vh; min-height: 190px; }
 .pane-left  { flex: 0 0 var(--left-w, 640px); overflow: auto; border-right: 2px solid var(--border); }
-.pane-right { flex: 1 1 auto; overflow: auto; }
-.splitter { flex: 0 0 5px; cursor: col-resize; background: var(--border-2); }
-.splitter:hover { background: var(--accent); }
+.pane-right { flex: 1 1 auto; overflow: auto; position: relative; }
+/* 仕切り。見た目は細いままで、当たり判定だけ広げる。
+   指では 5px の的は押せない。touch-action:none がないと
+   ブラウザのスクロールに取られてドラッグにならない。 */
+.splitter {
+  flex: 0 0 15px; cursor: col-resize; touch-action: none;
+  background: transparent; position: relative; user-select: none;
+}
+.splitter::before {
+  content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 3px;
+  background: var(--border-2); border-radius: 2px;
+}
+.splitter:hover::before, .splitter.dragging::before { background: var(--accent); }
 
 /* --- 表（Excel 風） --------------------------------------- */
 table.grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; }
@@ -200,10 +218,23 @@ tr.grouprow td.cell { font-weight: 700; }
 .kind-badge { flex: 0 0 auto; font-size: 10px; }
 .cc-dot { display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--cc); flex:0 0 auto; }
 
+/* セルの入力欄。
+   常に存在させ、カーソルのあるセルに重ねておく。
+
+   ⚠️ なぜ常駐させるのか — 日本語入力（IME）は keydown を発生させず、
+      composition / input イベントで文字が来る。キー入力を見て
+      その場で入力欄を作る方式だと、**日本語では打ち始めても
+      編集が始まらない**。常に入力欄を置いておけば、IME の文字が
+      そのまま入る。 */
 input.celledit {
   position: absolute; font: inherit; font-size: 12px; padding: 0 4px;
   border: 2px solid var(--accent); background: var(--panel); color: var(--text);
   z-index: 20; outline: none; border-radius: 0;
+}
+input.celledit.idle {
+  opacity: 0; border-color: transparent; background: transparent;
+  pointer-events: none;   /* 下のセルをクリックできるように */
+  caret-color: transparent;
 }
 select.celledit { position: absolute; font: inherit; font-size: 12px; z-index: 20; border: 2px solid var(--accent); }
 
@@ -255,7 +286,12 @@ select.celledit { position: absolute; font: inherit; font-size: 12px; z-index: 2
 .bar.group { top: 9px; height: 7px; border-radius: 1px; background: var(--text-faint); border: none; opacity: .45; }
 .bar-consumed { position: absolute; left: 0; top: 0; bottom: 0; background: var(--buffer); opacity: .4; }
 .bar-progress { position: absolute; left: 0; top: 0; bottom: 0; background: currentColor; opacity: .2; }
-.milestone {
+/* ガントのひし形。
+   ⚠️ クラス名は必ず親クラスで限定すること。かつて .milestone という
+   限定なしの名前にしていたため、ネットワーク図の <g class="net-node milestone">
+   にも当たり、CSS の transform が SVG の transform 属性を上書きして
+   ノードが 45 度回転していた。 */
+.bar-milestone {
   position: absolute; top: 6px; width: 13px; height: 13px; background: var(--ms);
   transform: rotate(45deg) translateX(-1px); border-radius: 1px; cursor: pointer;
 }
@@ -271,6 +307,55 @@ select.celledit { position: absolute; font: inherit; font-size: 12px; z-index: 2
 .handle.out { right: -14px; }
 .deplayer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .droptarget { outline: 2px dashed var(--accent); outline-offset: 1px; }
+
+/* --- 差分の見せ方 ------------------------------------------
+   「変更がないもの」を薄くする。
+
+   ⚠️ 半透明の白を前面に貼る方法は採っていません。
+      白い膜は明るいテーマでしか成立せず、暗いテーマだと
+      薄くしたつもりのものが一番明るくなって逆転します。
+      不透明度を下げれば地の色が透けるため、どちらのテーマでも
+      「引っ込む」方向に働きます。彩度も落として主張を弱めます。 */
+.faded { opacity: .3; filter: saturate(.3); }
+td.cell.faded { opacity: 1; filter: none; color: var(--text-faint); }
+td.cell.chg {
+  box-shadow: inset 0 -2px 0 var(--mod);
+  font-weight: 700; color: var(--text);
+}
+tr.rowchg td.cell:first-of-type { box-shadow: inset 3px 0 0 var(--mod); }
+tr.rowfade td.cell { color: var(--text-faint); }
+tr.rowfade td.cell .tw { opacity: .55; }
+
+/* 見比べの見出し。絶対配置にして高さを持たせない。
+   行の高さに影響すると、左の表と右のチャートで行がずれる。 */
+.cmp-tag {
+  position: absolute; top: 3px; left: 5px; z-index: 7;
+  padding: 1px 8px; border-radius: 9px; font-size: 10.5px; font-weight: 700;
+  color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-br);
+  pointer-events: none; white-space: nowrap;
+}
+.pane-right.cmp2 { border-left: 2px solid var(--border); }
+.net-split { display: flex; gap: 10px; align-items: flex-start; }
+.net-split > .net-wrap { flex: 1 1 0; min-width: 0; }
+.rowghost {
+  position: absolute; left: 8px; top: 6px; font-size: 10px;
+  color: var(--text-faint); font-style: italic;
+}
+
+.chg-badge {
+  font-size: 11.5px; font-weight: 700; color: var(--mod);
+  background: var(--mod-bg); border: 1px solid var(--warn-br);
+  border-radius: 10px; padding: 2px 10px; align-self: center; margin-bottom: 6px;
+}
+details.chglist {
+  margin-top: 10px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 7px; box-shadow: var(--shadow); overflow: hidden;
+}
+details.chglist > summary {
+  padding: 9px 12px; cursor: pointer; font-size: 12.5px; font-weight: 600;
+  background: var(--panel-2);
+}
+details.chglist[hidden] { display: none; }
 
 /* --- ポップアップ（列選択・接続・右クリック） --------------- */
 .pop {
@@ -298,7 +383,8 @@ select.celledit { position: absolute; font: inherit; font-size: 12px; z-index: 2
 .pop-foot { padding: 6px 10px; border-top: 1px solid var(--border-2); font-size: 11px; color: var(--text-faint); background: var(--panel-2); }
 
 /* --- ネットワーク図 --------------------------------------- */
-.net-wrap { min-height: 220px; max-height: 58vh; overflow: auto; background: var(--panel); position: relative; }
+.net-wrap { min-height: 200px; max-height: 58vh; overflow: auto; background: var(--panel); position: relative; }
+.net-node.faded { opacity: .28; filter: saturate(.3); }
 .net-node rect.box { fill: var(--normal-bg); stroke: var(--normal); stroke-width: 1.5; }
 .net-node.cc rect.box { fill: var(--cc-bg); stroke: var(--cc); stroke-width: 2.5; }
 .net-node.buffer rect.box { fill: var(--buffer-bg); stroke: var(--buffer); stroke-dasharray: 4 3; }
@@ -368,7 +454,8 @@ kbd {
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-screen="gantt" aria-selected="true">ガントチャート</button>
     <button class="tab" role="tab" data-screen="net"   aria-selected="false">ネットワーク図</button>
-    <button class="tab" role="tab" data-screen="diff"  aria-selected="false">変更内容<span class="count" id="diffCount"></span></button>
+    <span class="spacer"></span>
+    <span class="chg-badge" id="chgBadge" hidden></span>
   </div>
 </div>
 
@@ -378,6 +465,16 @@ kbd {
     <button data-zoom="day">日</button>
     <button data-zoom="week">週</button>
     <button data-zoom="month">月</button>
+    <span class="tb-sep"></span>
+    <span class="hint">比率</span>
+    <button data-ratio="0.72" title="表を広く">表</button>
+    <button data-ratio="0.5" title="半々">半々</button>
+    <button data-ratio="0.28" title="チャートを広く">図</button>
+    <span class="tb-sep"></span>
+    <span class="hint">差分</span>
+    <button data-diff="off">オフ</button>
+    <button data-diff="fade">濃淡</button>
+    <button data-diff="compare">見比べ</button>
     <span class="tb-sep"></span>
     <button id="btnCols">表示する列 ▾</button>
     <span class="tb-sep"></span>
@@ -393,15 +490,25 @@ kbd {
 
   <div class="card">
     <div class="split" id="split">
-      <div class="pane-left" id="paneLeft" tabindex="0">
+      <div class="pane-left" id="paneLeft">
         <table class="grid" id="grid"></table>
+        <input class="celledit idle" id="cellInput" autocomplete="off" spellcheck="false">
       </div>
       <div class="splitter" id="splitter" title="ドラッグで幅を変えられます"></div>
       <div class="pane-right" id="paneRight">
-        <div class="chart" id="chart">
-          <div class="axis" id="axis"></div>
-          <div class="ms-band" id="msBand"></div>
-          <div class="rows" id="chartRows"></div>
+        <span class="cmp-tag" hidden>変更前（読み込み時点）</span>
+        <div class="chart" id="chart1">
+          <div class="axis" id="axis1"></div>
+          <div class="ms-band" id="msBand1"></div>
+          <div class="rows" id="chartRows1"></div>
+        </div>
+      </div>
+      <div class="pane-right cmp2" id="paneRight2" hidden>
+        <span class="cmp-tag" hidden>変更後（いま）</span>
+        <div class="chart" id="chart2">
+          <div class="axis" id="axis2"></div>
+          <div class="ms-band" id="msBand2"></div>
+          <div class="rows" id="chartRows2"></div>
         </div>
       </div>
     </div>
@@ -415,6 +522,7 @@ kbd {
     <span><i class="swatch" style="background:var(--readonly);border:1px solid var(--border)"></i> 親行（子から決まるため編集不可）</span>
   </div>
 
+  <details class="chglist" id="chgGantt"></details>
   <div class="detail" id="detailGantt"></div>
 
   <p class="spec-ref">
@@ -429,13 +537,26 @@ kbd {
     <button id="netFit">全体表示</button>
     <button data-netzoom="in">＋</button>
     <button data-netzoom="out">－</button>
+    <span class="tb-sep"></span>
+    <span class="hint">差分</span>
+    <button data-diff="off">オフ</button>
+    <button data-diff="fade">濃淡</button>
+    <button data-diff="compare">見比べ</button>
+    <span class="tb-sep"></span>
     <label><input type="checkbox" id="netBuffers" checked> バッファ・マイルストンを表示</label>
     <span class="spacer"></span>
     <span class="hint">ノードを選ぶと左右に接続ハンドルが出ます。クリックでもドラッグでも繋げられます</span>
   </div>
 
-  <div class="card net-wrap" id="netWrap">
-    <svg id="net" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div class="net-split">
+    <div class="card net-wrap" id="netWrap">
+      <span class="cmp-tag" hidden>変更前（読み込み時点）</span>
+      <svg id="net1" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="card net-wrap cmp2" id="netWrap2" hidden>
+      <span class="cmp-tag" hidden>変更後（いま）</span>
+      <svg id="net2" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
   </div>
 
   <div class="legend">
@@ -445,20 +566,12 @@ kbd {
     <span><i class="swatch" style="background:var(--ms-bg);border:2px solid var(--ms)"></i> マイルストン</span>
   </div>
 
+  <details class="chglist" id="chgNet"></details>
   <div class="detail" id="detailNet"></div>
 
   <p class="spec-ref">
     仕様: <code>docs/ui/12-network.md</code> — 接続 UI はガントと共通の部品。
     図法（ノード＝タスク）は未確定 <code>Q-021</code>
-  </p>
-</section>
-
-<!-- ===== 変更内容の確認 ===== -->
-<section class="screen" id="screen-diff" hidden>
-  <div class="card" id="diffCard"></div>
-  <p class="spec-ref">
-    仕様: <code>docs/ui/13-diff.md</code> — 操作 <code>UI-DIFF-*</code>。
-    この差分は<strong>実際の編集内容から計算しています</strong>（読み込み時点との比較）
   </p>
 </section>
 
@@ -592,14 +705,23 @@ const ORIGINAL = JSON.parse(JSON.stringify({ tasks, deps }));
 /* ============================================================
    3. 画面の状態
    ============================================================ */
-const ZOOM = { day:17, week:8.5, month:3.2 };
+// 表示単位。拡大率だけでなく「目盛りの粒度」も変える。
+// 以前は拡大率しか変えておらず、日にしても目盛りが週のままで
+// 切り替えた実感がなかった。
+const UNITS = {
+  day:   { label:'日', dayW:22,  tick:'day' },
+  week:  { label:'週', dayW:9,   tick:'week' },
+  month: { label:'月', dayW:3.0, tick:'month' },
+};
 const state = {
   screen: 'gantt',
   cols: ['name','kind','duration','start','finish','preds','assignee','phase','progress','wbsCode'],
   cur: { r:0, c:0 },       // カーソル位置（行・列）
   anc: { r:0, c:0 },       // 範囲選択の起点
   editing: null,
-  dayW: 8.5,
+  unit: 'week',
+  diffMode: 'off',      // off / fade / compare
+  dayW: UNITS.week.dayW,
   collapsed: new Set(),
   netScale: 1,
   showExtras: true,
@@ -742,11 +864,14 @@ function renderGrid() {
     '</tr><tr><th class="rownum spacer-row"></th>' +
     `<th class="spacer-row" colspan="${cols.length}" style="font-weight:400;color:var(--text-faint)">マイルストン帯（右側に常時表示）</th></tr></thead>`;
 
+  const cs = state.diffMode === 'off' ? null : changeSet();
+
   h += '<tbody>';
   rs.forEach((t, r) => {
     const cls = ['kind-' + t.kind];
     if (isGroup(t)) cls.push('grouprow');
     if (r >= lo && r <= hi) cls.push('rowsel');
+    if (cs) cls.push(cs.ids.has(t.id) ? 'rowchg' : 'rowfade');
     h += `<tr class="${cls.join(' ')}" data-r="${r}" data-id="${t.id}">`;
     h += `<td class="rownum">${r + 1}</td>`;
     cols.forEach((k, c) => {
@@ -757,6 +882,12 @@ function renderGrid() {
       if (f.type === 'link') cc.push('linkcell');
       if (r >= lo && r <= hi && c >= lc && c <= hc) cc.push('sel');
       if (r === state.cur.r && c === state.cur.c) cc.push('cursor');
+      if (cs) {
+        const changedFields = cs.fields.get(t.id);
+        const isNew = cs.diff.added.some(a => a.id === t.id);
+        if (isNew || (changedFields && changedFields.has(k))) cc.push('chg');
+        else cc.push('faded');
+      }
       let v = getVal(t, k);
       if (f.unit && v !== '') v = v + f.unit;
       let inner = String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -782,91 +913,189 @@ function renderGrid() {
 }
 
 /* ============================================================
-   8. ガントの描画（時間軸・マイルストン帯・帯・依存線）
+   8. ガントの描画
+
+   差分の見せ方が 3 通りあるため、描画を「面」単位に分けている。
+     off     … 1 面
+     fade    … 1 面。変更のないものを薄くする
+     compare … 2 面。左＝読み込み時点 / 右＝いま
    ============================================================ */
-function renderChart() {
-  const R = range();
-  const days = (R.end - R.start) / DAY + 1;
+
+// 一時的にデータを差し替えて描く。span() や byId() が
+// グローバルを読むため、読み込み時点の状態を描くのに使う。
+function withData(ds, fn) {
+  const t = tasks, d = deps;
+  tasks = ds.tasks; deps = ds.deps;
+  try { return fn(); } finally { tasks = t; deps = d; }
+}
+const CURRENT = () => ({ tasks, deps });
+
+// 読み込み時点と現在の両方が収まる時間の幅。
+// 見比べるとき、左右で目盛りが違うと比較にならない。
+function axisRange() {
+  let mn = Infinity, mx = -Infinity;
+  const scan = ds => withData(ds, () => tasks.forEach(t => {
+    const sp = span(t);
+    if (!isNaN(sp.s)) mn = Math.min(mn, sp.s);
+    if (!isNaN(sp.f)) mx = Math.max(mx, sp.f);
+  }));
+  scan(CURRENT());
+  if (state.diffMode === 'compare') scan(ORIGINAL);
   const pad = 6 * DAY;
-  const A = { start: R.start - pad, end: R.end + pad };
+  return { start: mn - pad, end: mx + pad };
+}
+
+// 変更があったものの集合。差分の強調に使う。
+function changeSet() {
+  const d = computeDiff();
+  return {
+    ids:    new Set([...d.added.map(x => x.id), ...d.changed.map(c => c.task.id)]),
+    fields: new Map(d.changed.map(c => [c.task.id, new Set(c.fields.map(x => x.key))])),
+    deps:   new Set([...d.depAdded, ...d.depRemoved].map(x => x.from + '→' + x.to)),
+    diff:   d,
+  };
+}
+
+function renderChart() {
+  const A = axisRange();
   const x = t => Math.round((t - A.start) / DAY * state.dayW);
-  const totalW = Math.max(400, x(A.end + DAY) + 12);
+  const totalW = Math.max(320, x(A.end + DAY) + 12);
+  const list = rows();
+  const cs = state.diffMode === 'off' ? null : changeSet();
+  const compare = state.diffMode === 'compare';
 
-  document.getElementById('chart').style.width = totalW + 'px';
+  document.getElementById('paneRight2').hidden = !compare;
+  document.querySelectorAll('.cmp-tag').forEach(t => t.hidden = !compare);
 
-  // --- 時間軸
+  drawSide('1', compare ? ORIGINAL : CURRENT(), list, A, x, totalW, cs, compare);
+  if (compare) drawSide('2', CURRENT(), list, A, x, totalW, cs, false);
+}
+
+/**
+ * ガントの 1 面を描く。
+ * @param n       面の番号（'1' または '2'）
+ * @param ds      描くデータ（読み込み時点か、現在）
+ * @param list    行の並び。左右で揃えるため両面で同じものを使う
+ * @param isBefore 読み込み時点の面か（編集の手がかりは出さない）
+ */
+function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
+  const tick = UNITS[state.unit].tick;
+  document.getElementById('chart' + n).style.width = totalW + 'px';
+
+  // --- 時間軸。上段は月、下段は選んだ単位で刻む
   let ax = '';
   let cur = Date.UTC(new Date(A.start).getUTCFullYear(), new Date(A.start).getUTCMonth(), 1);
   while (cur <= A.end) {
     const nx = Date.UTC(new Date(cur).getUTCFullYear(), new Date(cur).getUTCMonth() + 1, 1);
     const from = Math.max(cur, A.start), to = Math.min(nx, A.end + DAY);
     const w = (to - from) / DAY * state.dayW;
-    if (w > 3) ax += `<div class="axis-month" style="left:${x(from)}px;width:${w}px">${new Date(cur).getUTCFullYear()}年${new Date(cur).getUTCMonth()+1}月</div>`;
+    const d = new Date(cur);
+    if (w > 3) {
+      const lbl = w > 64 ? `${d.getUTCFullYear()}年${d.getUTCMonth()+1}月` : `${d.getUTCMonth()+1}月`;
+      ax += `<div class="axis-month" style="left:${x(from)}px;width:${w}px">${lbl}</div>`;
+    }
     cur = nx;
   }
-  let w0 = A.start;
-  while (new Date(w0).getUTCDay() !== 1) w0 -= DAY;
-  for (let t = w0; t <= A.end; t += 7 * DAY) {
-    if (t < A.start) continue;
-    ax += `<div class="axis-week" style="left:${x(t)}px;width:${7*state.dayW}px">${state.dayW >= 5 ? fmtMD(t) : ''}</div>`;
+  if (tick === 'day') {
+    for (let t = A.start; t <= A.end; t += DAY) {
+      const wd = new Date(t).getUTCDay(), we = (wd === 0 || wd === 6);
+      ax += `<div class="axis-week" style="left:${x(t)}px;width:${state.dayW}px;opacity:${we ? .4 : 1}">${new Date(t).getUTCDate()}</div>`;
+    }
+  } else if (tick === 'week') {
+    let w0 = A.start;
+    while (new Date(w0).getUTCDay() !== 1) w0 -= DAY;
+    for (let t = w0; t <= A.end; t += 7 * DAY)
+      if (t >= A.start) ax += `<div class="axis-week" style="left:${x(t)}px;width:${7*state.dayW}px">${fmtMD(t)}</div>`;
+  } else {
+    let m = Date.UTC(new Date(A.start).getUTCFullYear(), new Date(A.start).getUTCMonth(), 1);
+    while (m <= A.end) {
+      const nx = Date.UTC(new Date(m).getUTCFullYear(), new Date(m).getUTCMonth() + 1, 1);
+      if (m >= A.start) ax += `<div class="axis-week" style="left:${x(m)}px;width:${(nx-m)/DAY*state.dayW}px">${new Date(m).getUTCMonth()+1}月</div>`;
+      m = nx;
+    }
   }
-  document.getElementById('axis').innerHTML = ax;
+  document.getElementById('axis' + n).innerHTML = ax;
 
   // --- マイルストン帯（スクロールしても常に見える）
   let ms = '';
-  tasks.filter(t => t.kind === 'milestone').forEach(m => {
-    const px = x(d2n(m.start));
-    const buf = tasks.find(b => b.kind === 'buffer' && b.protects === m.id);
-    if (buf) {
-      const bx = x(d2n(buf.start)), bw = Math.max(4, x(d2n(buf.finish) + DAY) - bx);
-      ms += `<div class="ms-buf" style="left:${bx}px;width:${bw}px" title="${buf.name} ${buf.consumed}/${buf.duration}d 消費"></div>`;
-    }
-    ms += `<div class="ms-line" style="left:${px}px"></div>`;
-    ms += `<div class="ms-mark" style="left:${px}px" title="${m.name} ${m.start}">
-             <span class="ms-diamond"></span><span class="ms-label">${m.name.replace('◆ ','')}</span></div>`;
+  withData(ds, () => {
+    tasks.filter(t => t.kind === 'milestone').forEach(m => {
+      const px = x(d2n(m.start));
+      const buf = tasks.find(b => b.kind === 'buffer' && b.protects === m.id);
+      const dim = cs && !cs.ids.has(m.id) ? ' faded' : '';
+      if (buf) {
+        const bx = x(d2n(buf.start)), bw = Math.max(4, x(d2n(buf.finish) + DAY) - bx);
+        ms += `<div class="ms-buf${cs && !cs.ids.has(buf.id) ? ' faded' : ''}" style="left:${bx}px;width:${bw}px" title="${buf.name} ${buf.consumed}/${buf.duration}d 消費"></div>`;
+      }
+      ms += `<div class="ms-line${dim}" style="left:${px}px"></div>`;
+      ms += `<div class="ms-mark${dim}" style="left:${px}px" title="${m.name} ${m.start}">
+               <span class="ms-diamond"></span><span class="ms-label">${m.name.replace('◆ ','')}</span></div>`;
+    });
   });
-  document.getElementById('msBand').innerHTML = ms;
+  document.getElementById('msBand' + n).innerHTML = ms;
 
-  // --- 行と帯
-  const rs = rows();
+  // --- 縦のグリッド線
   let grid = '';
-  for (let t = w0; t <= A.end; t += 7 * DAY) if (t >= A.start) grid += `<div class="gridline" style="left:${x(t)}px"></div>`;
+  if (tick === 'day' && state.dayW >= 10) {
+    for (let t = A.start; t <= A.end; t += DAY) grid += `<div class="gridline" style="left:${x(t)}px"></div>`;
+  } else if (tick === 'month') {
+    let m = Date.UTC(new Date(A.start).getUTCFullYear(), new Date(A.start).getUTCMonth(), 1);
+    while (m <= A.end) {
+      if (m >= A.start) grid += `<div class="gridline" style="left:${x(m)}px"></div>`;
+      m = Date.UTC(new Date(m).getUTCFullYear(), new Date(m).getUTCMonth() + 1, 1);
+    }
+  } else {
+    let g0 = A.start;
+    while (new Date(g0).getUTCDay() !== 1) g0 -= DAY;
+    for (let t = g0; t <= A.end; t += 7 * DAY) if (t >= A.start) grid += `<div class="gridline" style="left:${x(t)}px"></div>`;
+  }
   grid += `<div class="todayline" style="left:${x(d2n(TODAY))}px" title="今日 ${TODAY}"></div>`;
 
+  // --- 帯
   const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
-  const bars = rs.map((t, r) => {
-    const sp = span(t);
+  const bars = list.map((row, r) => {
     const sel = (r >= lo && r <= hi) ? ' rowsel' : '';
-    const active = r === state.cur.r;
-    if (isNaN(sp.s)) return `<div class="grow${sel}" data-r="${r}" data-id="${t.id}"></div>`;
-    const left = x(sp.s), w = Math.max(4, x(sp.f + DAY) - left);
+    const g = withData(ds, () => {
+      const t = byId(row.id); if (!t) return null;
+      const sp = span(t);
+      return { t, s: sp.s, f: sp.f, group: isGroup(t) };
+    });
+    if (!g || isNaN(g.s)) {
+      // この面には存在しない行（見比べで、片側にしかないもの）
+      const ghost = ds === ORIGINAL ? '<div class="rowghost">この時点には無い</div>' : '';
+      return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}">${ghost}</div>`;
+    }
+    const t = g.t;
+    const dim = cs && !cs.ids.has(t.id) ? ' faded' : '';
+    const active = !isBefore && r === state.cur.r;
+    const left = x(g.s), w = Math.max(4, x(g.f + DAY) - left);
 
     let body;
     if (t.kind === 'milestone') {
-      body = `<div class="milestone" data-bar="${t.id}" style="left:${left}px" title="${t.name}"></div>`;
-    } else if (isGroup(t)) {
-      body = `<div class="bar group" data-bar="${t.id}" style="left:${left}px;width:${w}px"></div>`;
+      body = `<div class="bar-milestone${dim}" data-bar="${t.id}" style="left:${left}px" title="${t.name}"></div>`;
+    } else if (g.group) {
+      body = `<div class="bar group${dim}" data-bar="${t.id}" style="left:${left}px;width:${w}px"></div>`;
     } else if (t.kind === 'buffer') {
       const pct = t.duration ? Math.round(t.consumed / t.duration * 100) : 0;
-      body = `<div class="bar buffer" data-bar="${t.id}" style="left:${left}px;width:${w}px" title="${t.name}">
+      body = `<div class="bar buffer${dim}" data-bar="${t.id}" style="left:${left}px;width:${w}px" title="${t.name}">
         ${pct ? `<div class="bar-consumed" style="width:${pct}%"></div>` : ''}
         <span class="bl">${state.dayW >= 5 ? t.consumed + '/' + t.duration + 'd' : ''}</span>
         ${active ? handleHtml() : ''}</div>`;
     } else {
       const cc = CRITICAL.has(t.id) ? ' cc' : '';
       const col = CRITICAL.has(t.id) ? 'var(--cc)' : 'var(--normal)';
-      body = `<div class="bar${cc}" data-bar="${t.id}" style="left:${left}px;width:${w}px" title="${t.name}">
+      body = `<div class="bar${cc}${dim}" data-bar="${t.id}" style="left:${left}px;width:${w}px" title="${t.name}">
         ${t.progress ? `<div class="bar-progress" style="width:${t.progress}%;color:${col}"></div>` : ''}
         <span class="bl">${state.dayW >= 5 ? t.name : ''}</span>
         ${active ? handleHtml() : ''}</div>`;
     }
-    return `<div class="grow${sel}" data-r="${r}" data-id="${t.id}">${body}</div>`;
+    return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}">${body}</div>`;
   }).join('');
 
-  const H = rs.length * 26;
-  document.getElementById('chartRows').innerHTML =
-    grid + bars + `<svg class="deplayer" id="deplayer" width="${totalW}" height="${H}"></svg>`;
-  renderDeps(x, rs);
+  const H = list.length * 26;
+  document.getElementById('chartRows' + n).innerHTML =
+    grid + bars + `<svg class="deplayer" id="deplayer${n}" width="${totalW}" height="${H}"></svg>`;
+  drawDeps(n, ds, list, x, cs);
 }
 
 // 接続ハンドル（左＝先行をつなぐ / 右＝後続をつなぐ）
@@ -875,15 +1104,16 @@ function handleHtml() {
          '<div class="handle out" data-handle="out" title="後続タスクをつなぐ（クリックで一覧／ドラッグで直結）"></div>';
 }
 
-function renderDeps(x, rs) {
-  const svg = document.getElementById('deplayer');
+function drawDeps(n, ds, list, x, cs) {
+  const svg = document.getElementById('deplayer' + n);
   if (!svg) return;
-  const idx = Object.fromEntries(rs.map((t,i) => [t.id, i]));
-  const curId = rs[state.cur.r] ? rs[state.cur.r].id : null;
-  const parts = deps.map(d => {
+  const idx = Object.fromEntries(list.map((t, i) => [t.id, i]));
+  const curId = list[state.cur.r] ? list[state.cur.r].id : null;
+  const parts = withData(ds, () => deps.map(d => {
     if (idx[d.from] === undefined || idx[d.to] === undefined) return '';
     if (!state.allDeps && d.from !== curId && d.to !== curId) return '';
     const a = byId(d.from), b = byId(d.to);
+    if (!a || !b) return '';
     const sa = span(a), sb = span(b);
     if (isNaN(sa.f) || isNaN(sb.s)) return '';
     const y1 = idx[d.from]*26 + 13, y2 = idx[d.to]*26 + 13;
@@ -891,9 +1121,10 @@ function renderDeps(x, rs) {
     const mx = Math.max(x1 + 7, x2 - 7);
     const on = CRITICAL.has(d.from) && CRITICAL.has(d.to);
     const col = on ? 'var(--cc)' : 'var(--text-faint)';
-    return `<path d="M${x1},${y1} H${mx} V${y2} H${x2}" fill="none" stroke="${col}" stroke-width="${on?1.8:1.2}" opacity=".85"/>
-            <circle cx="${x2}" cy="${y2}" r="2.4" fill="${col}"/>`;
-  }).join('');
+    const op = cs && !cs.deps.has(d.from + '→' + d.to) ? .18 : .85;
+    return `<path d="M${x1},${y1} H${mx} V${y2} H${x2}" fill="none" stroke="${col}" stroke-width="${on?1.8:1.2}" opacity="${op}"/>
+            <circle cx="${x2}" cy="${y2}" r="2.4" fill="${col}" opacity="${op}"/>`;
+  }).join(''));
   svg.innerHTML = parts;
 }
 
@@ -926,14 +1157,22 @@ function netLayout() {
 }
 
 function renderNet() {
-  const { pos, ed, w, h } = netLayout();
-  const svg = document.getElementById('net');
+  const compare = state.diffMode === 'compare';
+  const cs = state.diffMode === 'off' ? null : changeSet();
+  document.getElementById('netWrap2').hidden = !compare;
+  drawNet('1', compare ? ORIGINAL : CURRENT(), cs, compare);
+  if (compare) drawNet('2', CURRENT(), cs, false);
+}
+
+function drawNet(n, ds, cs, isBefore) {
+  const { pos, ed, w, h } = withData(ds, netLayout);
+  const svg = document.getElementById('net' + n);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.setAttribute('width', Math.round(w * state.netScale));
   svg.setAttribute('height', Math.round(h * state.netScale));
 
   const rs = rows();
-  const curId = rs[state.cur.r] ? rs[state.cur.r].id : null;
+  const curId = (!isBefore && rs[state.cur.r]) ? rs[state.cur.r].id : null;
   const related = new Set();
   if (curId) {
     related.add(curId);
@@ -945,7 +1184,8 @@ function renderNet() {
     if (!a || !b) return '';
     const x1 = a.x + NW, y1 = a.y + NH/2, x2 = b.x, y2 = b.y + NH/2, mx = (x1 + x2)/2;
     const on = CRITICAL.has(d.from) && CRITICAL.has(d.to);
-    const dim = curId && !(related.has(d.from) && related.has(d.to)) ? ' dim' : '';
+    let dim = curId && !(related.has(d.from) && related.has(d.to)) ? ' dim' : '';
+    if (cs && !cs.deps.has(d.from + '→' + d.to)) dim = ' dim';
     return `<path class="net-edge${on?' cc':''}${dim}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2-7},${y2}"
       marker-end="url(#${on?'arrCC':'arr'})"/>`;
   }).join('');
@@ -954,11 +1194,12 @@ function renderNet() {
     const t = p.t, cls = ['net-node', t.kind];
     if (CRITICAL.has(id)) cls.push('cc');
     if (id === curId) cls.push('sel');
+    if (cs && !cs.ids.has(id)) cls.push('faded');
     const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
               : `${t.duration}d ・ ${t.assignee || '—'}`;
     const nm = t.name.length > 11 ? t.name.slice(0,10) + '…' : t.name;
-    const handles = id === curId ? `
+    const handles = (id === curId && !isBefore) ? `
       <circle class="net-handle" data-nethandle="in"  data-id="${id}" cx="0"  cy="${NH/2}" r="6"/>
       <circle class="net-handle" data-nethandle="out" data-id="${id}" cx="${NW}" cy="${NH/2}" r="6"/>` : '';
     return `<g class="${cls.join(' ')}" data-node="${id}" transform="translate(${p.x},${p.y})">
@@ -972,7 +1213,7 @@ function renderNet() {
       <path d="M0,0 L7,3 L0,6 z" fill="var(--text-faint)"/></marker>
     <marker id="arrCC" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
       <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--cc)"/></marker>
-    </defs>${edges}${nodes}<g id="netTemp"></g>`;
+    </defs>${edges}${nodes}`;
 }
 
 /* ============================================================
@@ -1007,13 +1248,17 @@ function computeDiff() {
 
 function renderDiff() {
   const d = computeDiff();
-  document.getElementById('diffCount').textContent = d.total || '';
+  const badge = document.getElementById('chgBadge');
+  badge.hidden = !d.total;
+  badge.textContent = d.total ? `未保存の変更 ${d.total} 件` : '';
+
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  let h = `<div class="diff-head"><strong>${d.total ? d.total + ' 件の変更があります' : '変更はありません'}</strong>
+  let h = `<summary>変更内容の一覧 — ${d.total ? d.total + ' 件' : '変更なし'}</summary>`;
+  h += `<div class="diff-head"><strong>${d.total ? d.total + ' 件の変更があります' : '変更はありません'}</strong>
     <span class="spacer"></span><button>検証</button><button class="primary">保存</button></div>`;
 
   if (!d.total) {
-    h += `<div class="nochange">ガントの表でセルを編集すると、ここに変更内容が出ます。<br>
+    h += `<div class="nochange">表のセルを編集すると、ここに変更内容が出ます。<br>
       <span style="font-size:11.5px">読み込み時点の状態と比べて表示しています。</span></div>`;
   } else {
     d.added.forEach(t => {
@@ -1045,7 +1290,13 @@ function renderDiff() {
       後続タスクの日程とバッファの増減は<strong>サーバ側の再計算結果</strong>で確定します。
       画面側では、いま編集した帯の長さだけを反映しています。</div>`;
   }
-  document.getElementById('diffCard').innerHTML = h;
+  ['chgGantt','chgNet'].forEach(id => {
+    const el = document.getElementById(id);
+    const wasOpen = el.open;
+    el.innerHTML = h;
+    el.open = wasOpen;
+    el.hidden = false;
+  });
 }
 
 /* ============================================================
@@ -1072,6 +1323,7 @@ function renderAll() {
   renderGrid(); renderChart(); renderNet(); renderDetail(); renderDiff();
   document.getElementById('btnUndo').disabled = !undoStack.length;
   document.getElementById('btnRedo').disabled = !redoStack.length;
+  if (typeof placeInput === 'function') placeInput();
   syncScroll();
 }
 
@@ -1079,6 +1331,23 @@ function renderAll() {
    12. セルの編集
    ============================================================ */
 function cellEl(r, c) { return document.querySelector(`#grid td.cell[data-r="${r}"][data-c="${c}"]`); }
+
+const cellInput = document.getElementById('cellInput');
+const focusGrid = () => cellInput.focus({ preventScroll: true });
+
+// カーソルのあるセルに入力欄を重ねる。編集していないときは透明で、
+// 下のセルをクリックできる（pointer-events: none）。
+function placeInput() {
+  const td = cellEl(state.cur.r, state.cur.c);
+  if (!td) { cellInput.classList.add('idle'); return; }
+  const host = document.getElementById('paneLeft');
+  const b = td.getBoundingClientRect(), hb = host.getBoundingClientRect();
+  cellInput.style.left   = (b.left - hb.left + host.scrollLeft) + 'px';
+  cellInput.style.top    = (b.top  - hb.top  + host.scrollTop)  + 'px';
+  cellInput.style.width  = b.width + 'px';
+  cellInput.style.height = b.height + 'px';
+  if (!state.editing) { cellInput.value = ''; cellInput.classList.add('idle'); }
+}
 
 function moveCur(r, c, keepAnchor) {
   const rs = rows();
@@ -1088,62 +1357,85 @@ function moveCur(r, c, keepAnchor) {
   renderAll();
   const el = cellEl(state.cur.r, state.cur.c);
   if (el) el.scrollIntoView({ block:'nearest', inline:'nearest' });
+  placeInput();
 }
 
-function beginEdit(initial) {
-  if (state.editing) return;
-  const rs = rows(), t = rs[state.cur.r], key = state.cols[state.cur.c];
-  if (!t) return;
-  const f = F[key];
-
-  // 先行タスクのセルは、文字ではなく接続の一覧を開く
-  if (f.type === 'link') { openConnect(t.id, 'in', cellEl(state.cur.r, state.cur.c)); return; }
-  if (readOnly(t, key)) return;
-
+// 選択肢のある項目は一覧から選ばせる（打ち間違いと表記ゆれを防ぐ）
+function openSelect() {
+  const t = rows()[state.cur.r], key = state.cols[state.cur.c], f = F[key];
   const td = cellEl(state.cur.r, state.cur.c);
-  if (!td) return;
-  const box = td.getBoundingClientRect(), host = document.getElementById('paneLeft');
-  const hb = host.getBoundingClientRect();
-
-  let el;
-  if (f.type === 'select') {
-    el = document.createElement('select');
-    el.className = 'celledit';
-    el.innerHTML = f.options.map(o => `<option${o === getVal(t,key) ? ' selected' : ''}>${o}</option>`).join('');
-  } else {
-    el = document.createElement('input');
-    el.className = 'celledit';
-    el.type = 'text';
-    el.value = initial !== undefined ? initial : String(getVal(t, key));
-  }
-  el.style.left = (box.left - hb.left + host.scrollLeft) + 'px';
-  el.style.top  = (box.top  - hb.top  + host.scrollTop) + 'px';
-  el.style.width = box.width + 'px';
-  el.style.height = box.height + 'px';
+  if (!t || !td) return;
+  const host = document.getElementById('paneLeft'), b = td.getBoundingClientRect(), hb = host.getBoundingClientRect();
+  const el = document.createElement('select');
+  el.className = 'celledit';
+  el.innerHTML = f.options.map(o => `<option${o === getVal(t,key) ? ' selected' : ''}>${o}</option>`).join('');
+  el.style.left = (b.left - hb.left + host.scrollLeft) + 'px';
+  el.style.top  = (b.top  - hb.top  + host.scrollTop)  + 'px';
+  el.style.width = b.width + 'px';
+  el.style.height = b.height + 'px';
   host.appendChild(el);
   el.focus();
-  if (el.select && initial === undefined) el.select();
-  state.editing = { el, key, id: t.id };
-
-  const commit = ok => {
-    if (!state.editing) return;
-    const { el, key, id } = state.editing;
-    const v = el.value;
-    state.editing = null;
-    el.remove();
-    if (ok) { pushUndo(); setVal(byId(id), key, v); }
-    renderAll();
-    document.getElementById('paneLeft').focus();
+  const done = ok => {
+    const v = el.value; el.remove();
+    if (ok) { pushUndo(); setVal(byId(t.id), key, v); }
+    renderAll(); focusGrid();
   };
-  el.addEventListener('blur', () => commit(true));
+  el.addEventListener('change', () => done(true));
+  el.addEventListener('blur', () => done(false));
   el.addEventListener('keydown', e => {
     e.stopPropagation();
-    if (e.key === 'Enter')      { e.preventDefault(); commit(true); moveCur(state.cur.r + 1, state.cur.c); }
-    else if (e.key === 'Escape'){ e.preventDefault(); commit(false); }
-    else if (e.key === 'Tab')   { e.preventDefault(); commit(true); moveCur(state.cur.r, state.cur.c + (e.shiftKey ? -1 : 1)); }
+    if (e.key === 'Enter') { e.preventDefault(); done(true); }
+    if (e.key === 'Escape') { e.preventDefault(); done(false); }
   });
 }
 
+/**
+ * 編集を始める。
+ * @param initial 打ち始めた文字。省略すると現在値を入れて全選択する
+ */
+function beginEdit(initial) {
+  if (state.editing) return;
+  const t = rows()[state.cur.r], key = state.cols[state.cur.c];
+  if (!t) return;
+  const f = F[key];
+
+  // 先行タスクのセルは文字入力ではなく接続の一覧を開く
+  if (f.type === 'link')   { cellInput.value = ''; openConnect(t.id, 'in', cellEl(state.cur.r, state.cur.c)); return; }
+  if (f.type === 'select') { cellInput.value = ''; openSelect(); return; }
+  if (readOnly(t, key))    { cellInput.value = ''; return; }
+
+  state.editing = { key, id: t.id };
+  cellInput.classList.remove('idle');
+  if (initial !== undefined) cellInput.value = initial;
+  else { cellInput.value = String(getVal(t, key)); cellInput.select(); }
+}
+
+function commitEdit(ok) {
+  if (!state.editing) return;
+  const { key, id } = state.editing;
+  const v = cellInput.value;
+  state.editing = null;
+  cellInput.value = '';
+  cellInput.classList.add('idle');
+  if (ok) { pushUndo(); setVal(byId(id), key, v); }
+  renderAll();
+  placeInput();
+  focusGrid();
+}
+
+// 文字が入ってきたら編集開始。
+// keydown ではなく input を見ているのは、日本語入力（IME）が
+// keydown を発生させないため。ここが分かれ目。
+cellInput.addEventListener('compositionstart', () => { if (!state.editing) beginEdit(''); });
+cellInput.addEventListener('input', () => {
+  if (state.editing) return;
+  if (cellInput.value === '') return;
+  const typed = cellInput.value;
+  beginEdit(typed);
+  // 編集に入れなかった項目（読み取り専用・選択肢・接続）は打った文字を捨てる
+  if (!state.editing) cellInput.value = '';
+});
+cellInput.addEventListener('blur', () => { if (state.editing) commitEdit(true); });
 /* ============================================================
    13. コピー / 貼り付け / 切り取り（タブ区切り = Excel と相互運用）
    ============================================================ */
@@ -1401,17 +1693,27 @@ function openColumns(anchorEl) {
 const paneLeft  = document.getElementById('paneLeft');
 const paneRight = document.getElementById('paneRight');
 
-// 左右のペインの縦スクロールを合わせる
+const paneRight2 = document.getElementById('paneRight2');
+
+// 3 つのペインの縦スクロールを合わせる。
+// 見比べのときは横スクロールも合わせないと、左右で見ている期間がずれる。
 let syncing = false;
-function syncScroll() { /* 描画後に位置を保つためのフック（今は何もしない） */ }
-paneLeft.addEventListener('scroll', () => {
-  if (syncing) return; syncing = true;
-  paneRight.scrollTop = paneLeft.scrollTop; syncing = false;
-});
-paneRight.addEventListener('scroll', () => {
-  if (syncing) return; syncing = true;
-  paneLeft.scrollTop = paneRight.scrollTop; syncing = false;
-});
+function syncScroll() { /* 描画後に位置を保つためのフック */ }
+function linkScroll(src, others, alsoX) {
+  src.addEventListener('scroll', () => {
+    if (syncing) return;
+    syncing = true;
+    others.forEach(o => {
+      o.scrollTop = src.scrollTop;
+      if (alsoX && o.classList.contains('pane-right') && src.classList.contains('pane-right'))
+        o.scrollLeft = src.scrollLeft;
+    });
+    syncing = false;
+  });
+}
+linkScroll(paneLeft,   [paneRight, paneRight2], false);
+linkScroll(paneRight,  [paneLeft,  paneRight2], true);
+linkScroll(paneRight2, [paneLeft,  paneRight],  true);
 
 // --- 表のクリック
 document.getElementById('grid').addEventListener('mousedown', e => {
@@ -1425,7 +1727,7 @@ document.getElementById('grid').addEventListener('mousedown', e => {
   if (rn) {   // 行番号クリック = 行全体を選ぶ
     const r = Number(rn.parentElement.dataset.r);
     state.cur.r = state.anc.r = r; state.cur.c = 0; state.anc.c = state.cols.length - 1;
-    renderAll(); paneLeft.focus(); e.preventDefault(); return;
+    renderAll(); placeInput(); focusGrid(); e.preventDefault(); return;
   }
   const td = e.target.closest('td.cell');
   if (!td) return;
@@ -1435,16 +1737,23 @@ document.getElementById('grid').addEventListener('mousedown', e => {
   const r = Number(td.dataset.r), c = Number(td.dataset.c);
   if (e.shiftKey) { state.cur.r = r; state.cur.c = c; }
   else { state.cur.r = state.anc.r = r; state.cur.c = state.anc.c = c; }
-  renderAll(); paneLeft.focus();
+  renderAll(); placeInput(); focusGrid();
 });
 document.getElementById('grid').addEventListener('dblclick', e => {
   if (e.target.closest('td.cell')) beginEdit();
 });
 
 // --- キーボード（Excel 風）
-paneLeft.addEventListener('keydown', e => {
-  if (state.editing) return;
+cellInput.addEventListener('keydown', e => {
   const k = e.key, mod = e.ctrlKey || e.metaKey;
+
+  // 編集中は確定・取消・移動だけを受ける（文字入力は入力欄に任せる）
+  if (state.editing) {
+    if (k === 'Enter')  { e.preventDefault(); commitEdit(true); moveCur(state.cur.r + 1, state.cur.c); }
+    else if (k === 'Escape') { e.preventDefault(); commitEdit(false); }
+    else if (k === 'Tab') { e.preventDefault(); commitEdit(true); moveCur(state.cur.r, state.cur.c + (e.shiftKey ? -1 : 1)); }
+    return;
+  }
 
   if (mod && k.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
   if (mod && (k.toLowerCase() === 'y' || (k.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
@@ -1465,18 +1774,21 @@ paneLeft.addEventListener('keydown', e => {
   if (k === 'F2')    { e.preventDefault(); beginEdit(); return; }
   if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearSel(); return; }
   if (k === 'Escape') { closePop(); return; }
-  // 文字を打ったらそのまま編集開始
-  if (!mod && !e.altKey && k.length === 1) { e.preventDefault(); beginEdit(k); }
+  // 半角文字はここで編集を始める。
+  // 日本語（IME）は keydown が来ないので input イベント側で始める。
 });
 
 // システムのクリップボードからの貼り付け（Excel からそのまま貼れる）
-paneLeft.addEventListener('paste', e => {
+cellInput.addEventListener('paste', e => {
+  if (state.editing) return;   // 編集中は入力欄への普通の貼り付け
   const text = (e.clipboardData || window.clipboardData).getData('text');
   if (text) { e.preventDefault(); pasteTSV(text); }
 });
 
 // --- ガント側のクリックと接続ハンドル
-document.getElementById('chartRows').addEventListener('mousedown', e => {
+// ガントの帯。見比べのときは面が 2 つあるので、まとめて受ける
+document.getElementById('split').addEventListener('mousedown', e => {
+  if (!e.target.closest('.rows')) return;
   const h = e.target.closest('[data-handle]');
   if (h) {
     const id = h.closest('[data-bar]').dataset.bar;
@@ -1487,12 +1799,12 @@ document.getElementById('chartRows').addEventListener('mousedown', e => {
   if (row) {
     e.preventDefault();
     state.cur.r = state.anc.r = Number(row.dataset.r);
-    renderAll(); paneLeft.focus();
+    renderAll(); placeInput(); focusGrid();
   }
 });
 
 // --- ネットワーク図
-document.getElementById('net').addEventListener('mousedown', e => {
+document.querySelector('.net-split').addEventListener('mousedown', e => {
   const h = e.target.closest('[data-nethandle]');
   if (h) { startDrag(h.dataset.id, h.dataset.nethandle, e); return; }
   const g = e.target.closest('[data-node]');
@@ -1504,16 +1816,31 @@ document.getElementById('net').addEventListener('mousedown', e => {
 
 // --- ツールバー
 document.querySelectorAll('[data-zoom]').forEach(b =>
-  b.onclick = () => { state.dayW = ZOOM[b.dataset.zoom]; renderChart(); });
+  b.onclick = () => {
+    state.unit = b.dataset.zoom;
+    state.dayW = UNITS[state.unit].dayW;
+    markUnit();
+    renderChart();
+  });
+function markUnit() {
+  document.querySelectorAll('[data-zoom]').forEach(o =>
+    o.setAttribute('aria-pressed', String(o.dataset.zoom === state.unit)));
+}
 document.getElementById('allDeps').onchange = e => { state.allDeps = e.target.checked; renderChart(); };
 document.getElementById('btnCols').onclick   = e => openColumns(e.currentTarget);
-document.getElementById('btnInsert').onclick = () => { insertRow(); paneLeft.focus(); };
-document.getElementById('btnDelete').onclick = () => { deleteRows(); paneLeft.focus(); };
-document.getElementById('btnIndent').onclick = () => { indent(); paneLeft.focus(); };
-document.getElementById('btnOutdent').onclick= () => { outdent(); paneLeft.focus(); };
+document.getElementById('btnInsert').onclick = () => { insertRow(); focusGrid(); };
+document.getElementById('btnDelete').onclick = () => { deleteRows(); focusGrid(); };
+document.getElementById('btnIndent').onclick = () => { indent(); focusGrid(); };
+document.getElementById('btnOutdent').onclick= () => { outdent(); focusGrid(); };
 document.getElementById('btnUndo').onclick   = undo;
 document.getElementById('btnRedo').onclick   = redo;
-document.getElementById('btnSave').onclick   = () => document.querySelector('.tab[data-screen="diff"]').click();
+// 保存を押したら、まず変更内容を見せる（保存前の関所）
+document.getElementById('btnSave').onclick = () => {
+  if (state.diffMode === 'off') { state.diffMode = 'fade'; markDiff(); renderAll(); }
+  const el = document.getElementById(state.screen === 'net' ? 'chgNet' : 'chgGantt');
+  el.open = true;
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+};
 
 document.querySelectorAll('[data-netzoom]').forEach(b =>
   b.onclick = () => {
@@ -1521,6 +1848,17 @@ document.querySelectorAll('[data-netzoom]').forEach(b =>
     renderNet();
   });
 document.getElementById('netFit').onclick = () => { state.netScale = 1; renderNet(); };
+
+// 差分の見せ方の切替（ガントとネットワーク図の両方に同じボタンを置いている）
+document.querySelectorAll('[data-diff]').forEach(b => b.onclick = () => {
+  state.diffMode = b.dataset.diff;
+  markDiff();
+  renderAll();
+});
+function markDiff() {
+  document.querySelectorAll('[data-diff]').forEach(o =>
+    o.setAttribute('aria-pressed', String(o.dataset.diff === state.diffMode)));
+}
 document.getElementById('netBuffers').onchange = e => { state.showExtras = e.target.checked; renderNet(); };
 
 // --- タブ
@@ -1528,22 +1866,46 @@ document.querySelectorAll('.tab').forEach(t => {
   t.onclick = () => {
     state.screen = t.dataset.screen;
     document.querySelectorAll('.tab').forEach(o => o.setAttribute('aria-selected', String(o === t)));
-    ['gantt','net','diff'].forEach(s => document.getElementById('screen-' + s).hidden = (s !== state.screen));
-    if (state.screen === 'gantt') paneLeft.focus();
+    ['gantt','net'].forEach(s => document.getElementById('screen-' + s).hidden = (s !== state.screen));
+    if (state.screen === 'gantt') focusGrid();
   };
 });
 
 // --- 仕切りのドラッグ（左ペインの幅）
-document.getElementById('splitter').addEventListener('mousedown', e => {
-  e.preventDefault();
+// 仕切りのドラッグ。ポインタイベントを使うとマウスと指の両方を扱える。
+// （以前は mousedown だけを見ており、スマホでは一切動かなかった）
+const splitterEl = document.getElementById('splitter');
+function setRatio(px) {
   const split = document.getElementById('split');
-  const move = ev => {
-    const w = Math.max(240, Math.min(1000, ev.clientX - split.getBoundingClientRect().left));
-    split.style.setProperty('--left-w', w + 'px');
+  const total = split.getBoundingClientRect().width;
+  const w = Math.max(150, Math.min(total - 160, px));
+  split.style.setProperty('--left-w', w + 'px');
+  renderChart();
+}
+splitterEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  splitterEl.setPointerCapture(e.pointerId);
+  splitterEl.classList.add('dragging');
+  const split = document.getElementById('split');
+  const move = ev => setRatio(ev.clientX - split.getBoundingClientRect().left);
+  const up = () => {
+    splitterEl.classList.remove('dragging');
+    splitterEl.removeEventListener('pointermove', move);
+    splitterEl.removeEventListener('pointerup', up);
+    splitterEl.removeEventListener('pointercancel', up);
   };
-  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
+  splitterEl.addEventListener('pointermove', move);
+  splitterEl.addEventListener('pointerup', up);
+  splitterEl.addEventListener('pointercancel', up);
+});
+// 既定の比率。スマホでは仕切りを引くより確実
+document.querySelectorAll('[data-ratio]').forEach(b => b.onclick = () => {
+  const split = document.getElementById('split');
+  setRatio(split.getBoundingClientRect().width * Number(b.dataset.ratio));
+});
+splitterEl.addEventListener('dblclick', () => {
+  const split = document.getElementById('split');
+  setRatio(split.getBoundingClientRect().width * 0.5);
 });
 
 // ポップアップの外側をクリックしたら閉じる
@@ -1552,6 +1914,9 @@ document.addEventListener('mousedown', e => {
       && !e.target.closest('[data-nethandle]')) closePop();
 }, true);
 
+markUnit();
+markDiff();
 renderAll();
-paneLeft.focus();
+placeInput();
+focusGrid();
 </script>

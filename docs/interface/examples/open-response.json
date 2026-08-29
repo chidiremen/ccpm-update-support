@@ -1,0 +1,11 @@
+{
+  "_comment": "⚠️ POST /plans の応答例（仮）。実物は未確認 (Q-003, Q-004)",
+
+  "planId": "pln_01HZX3K8QW",
+  "revision": "r7",
+  "sourcePath": "C:\\work\\sample-project.xml",
+  "displayName": "sample-project.xml",
+  "schemaVersion": "1.0",
+  "encoding": "UTF-8",
+  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plan schemaVersion=\"1.0\">...(全文)...</plan>"
+}

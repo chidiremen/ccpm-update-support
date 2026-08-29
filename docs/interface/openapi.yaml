@@ -1,0 +1,637 @@
+openapi: 3.0.3
+
+info:
+  title: 計画ファイル編集ツール ローカル API
+  version: 0.1.0-draft
+  description: |
+    XML 形式の計画ファイルを編集するツールの、画面側とサーバ側の境界を定義します。
+
+    ## ⚠️ このファイルの現在の状態
+
+    **すべて推測です。** サーバ側の実物の仕様が未入手のため、
+    画面仕様（`docs/ui/`）から必要な操作を導いて仮に置いたものです。
+
+    実物を確認したら、このファイルを差し替えてください。
+    確認事項の一覧は `docs/90-open-questions.md` にあります。
+
+    ## 読み方
+
+    - 日本語の解説版は `docs/interface/21-api.md` にあります
+    - 各操作の `x-ui-operations` に、**その API がどの画面操作のために存在するか**を書いています
+    - 画面操作の一覧は `docs/ui/10-screens.md` にあります
+
+    ## 前提
+
+    - 利用者のパソコンの中だけで動きます。外部との通信はありません
+    - 計画の中身は **XML 文字列そのもの**をやり取りします（構造化しません）
+    - 保存時は `If-Match` で版を照合し、他人の変更を消す事故を防ぎます
+
+  contact:
+    name: 確認事項の一覧
+    url: https://github.com/chidiremen/ccpm-update-support/blob/main/docs/90-open-questions.md
+
+servers:
+  - url: http://127.0.0.1:{port}/api/v1
+    description: 利用者のパソコン上で動くサーバ側
+    variables:
+      port:
+        default: "8080"
+        description: ⚠️ 実際のポート番号は未確認 (Q-002)
+
+# 認証は設けていません。利用者のパソコンの中だけで動き、
+# 自分自身(127.0.0.1)からの接続しか受け付けない前提のためです。
+#
+# ⚠️ この前提が正しいかは未確認です (Q-007)。
+#    サーバ側の待ち受け設定によっては、同じネットワーク上の
+#    他のパソコンから計画ファイルを読めてしまう可能性があります。
+#
+# 空の配列は「認証を要求しない」ことを明示的に宣言するものです。
+# 書き忘れと区別するため、あえて明記しています。
+security: []
+
+tags:
+  - name: system
+    description: 疎通確認とサーバ情報
+  - name: plans
+    description: 計画ファイルの読み込み・保存
+
+paths:
+
+  /health:
+    get:
+      tags: [system]
+      summary: 疎通確認
+      description: |
+        サーバ側が動いているかを確かめます。画面側の起動時に呼びます。
+
+        確定度: 🔴 推測 (Q-002)
+      operationId: getHealth
+      x-ui-operations: [起動時]
+      responses:
+        "200":
+          description: 動作している
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /meta:
+    get:
+      tags: [system]
+      summary: サーバ側の情報を取得する
+      description: |
+        サーバ側の版と、対応している計画ファイルの形式を返します。
+
+        画面側が想定する形式とずれていたら、起動時に警告できます。
+
+        確定度: 🔴 推測 (Q-002)
+      operationId: getMeta
+      x-ui-operations: [起動時]
+      responses:
+        "200":
+          description: サーバ側の情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerMeta"
+
+  /plans:
+    post:
+      tags: [plans]
+      summary: 計画ファイルを開く
+      description: |
+        計画ファイルを読み込み、編集セッションを始めます。
+
+        返される `planId` を、以降の操作で使います。
+        同時に返される `revision` は、**保存時に必要になるので保持してください**。
+
+        ## ⚠️ 最優先の確認事項 (Q-004)
+
+        ファイルの指定方法が未確定です。この API は現在
+        「サーバ側から見えるパスを指定する」形で書いていますが、
+        「ファイルの中身を送る」形の可能性もあります。
+
+        ブラウザは安全上の理由から、利用者が選んだファイルの絶対パスを
+        画面側に教えてくれません。パス指定にするなら、
+        利用者に手で入力してもらうか、サーバ側が候補一覧を返す必要があります。
+
+        確定度: 🔴 推測 (Q-004)
+      operationId: openPlan
+      x-ui-operations: [UI-OPEN-01, UI-OPEN-02]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenPlanRequest"
+            examples:
+              パス指定:
+                summary: サーバ側から見えるパスを指定する
+                value:
+                  sourcePath: "C:\\work\\project-a.xml"
+              中身を送る:
+                summary: ファイルの中身を直接送る
+                value:
+                  xml: "<?xml version=\"1.0\"?><plan>...</plan>"
+                  displayName: "project-a.xml"
+      responses:
+        "201":
+          description: 開けた
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessablePlan"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /plans/{planId}:
+
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+
+    get:
+      tags: [plans]
+      summary: 現在の計画を取得する
+      description: |
+        サーバ側が保持している最新の計画を返します。
+
+        使う場面:
+        - 画面を再読み込みしたとき
+        - **保存が衝突（409）したあと、最新を取り直すとき**（UI-DIFF-06）
+
+        確定度: 🔴 推測 (Q-003)
+      operationId: getPlan
+      x-ui-operations: [UI-GANTT-01, UI-NET-01, UI-DIFF-06]
+      responses:
+        "200":
+          description: 現在の計画
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanEnvelope"
+            application/xml:
+              schema:
+                type: string
+                description: |
+                  ⚠️ 案 B（XML をそのまま本文にする）を採る場合の形式。
+                  この場合 `revision` は `ETag` ヘッダーで返します。
+                  どちらを採るかは Q-003 で確認します。
+              examples:
+                生の XML:
+                  value: "<?xml version=\"1.0\"?><plan>...</plan>"
+          headers:
+            ETag:
+              description: 現在の版。案 B のときに使います
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [plans]
+      summary: 計画を置き換える（保存）
+      description: |
+        計画の XML を**全文置き換え**ます。部分更新はできません。
+
+        ## `If-Match` は必須です
+
+        読み込んだときの `revision` を `If-Match` に入れてください。
+
+        サーバ側が持っている版と食い違えば `409` が返り、保存は行われません。
+        これにより、**自分が読み込んだ後に入った他人の変更を、
+        気づかずに消してしまう事故**を防ぎます。
+
+        `409` を受け取ったときの復帰手順は `docs/ui/13-diff.md` の
+        `UI-DIFF-06` を参照してください。
+
+        確定度: 🔴 推測 (Q-005)
+      operationId: replacePlan
+      x-ui-operations: [UI-DIFF-03]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: 読み込んだときの `revision`
+          schema:
+            type: string
+          example: "r7"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplacePlanRequest"
+          application/xml:
+            schema:
+              type: string
+              description: 案 B を採る場合の形式（Q-003）
+      responses:
+        "200":
+          description: 保存できた。新しい版を返します
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            **版が食い違ったため保存しなかった。**
+
+            自分が読み込んだ後に、他の誰か（または自分の別ウィンドウ）が
+            保存しています。最新を取り直し、変更を突き合わせてからやり直してください。
+
+            **変更を捨てさせないでください。**
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictError"
+        "412":
+          description: |
+            `If-Match` が指定されていない、または形式が不正。
+
+            ⚠️ サーバ側が 409 と 412 をどう使い分けるかは未確認です (Q-005)。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/UnprocessablePlan"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [plans]
+      summary: 編集セッションを閉じる
+      description: |
+        サーバ側が保持している編集セッションを終了します。
+        **ファイルは削除しません。**
+
+        確定度: 🔴 推測 (Q-004)
+      operationId: closePlan
+      x-ui-operations: [画面を閉じる]
+      responses:
+        "204":
+          description: 閉じた
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /plans/{planId}/validate:
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+    post:
+      tags: [plans]
+      summary: 計画を検証する（保存はしない）
+      description: |
+        保存する前に、計画として妥当かを確かめます。**ファイルは変更しません。**
+
+        検証したい XML を本文で送ります。省略した場合は、
+        サーバ側が現在保持している内容を検証します。
+
+        結果は「エラー」と「警告」に分かれます。
+        エラーがあると保存できません。警告は利用者の判断に委ねます。
+
+        確定度: 🔴 推測 (Q-014)
+      operationId: validatePlan
+      x-ui-operations: [UI-DIFF-02]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                xml:
+                  type: string
+                  description: 検証したい XML。省略するとサーバ側の現在の内容を検証
+      responses:
+        "200":
+          description: |
+            検証を実行した。**問題があっても 200 を返します。**
+            検証できたこと自体は成功だからです。
+            問題の有無は本文の `valid` で判断してください。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /plans/{planId}/save:
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+    post:
+      tags: [plans]
+      summary: 計画ファイルに書き出す
+      description: |
+        サーバ側が保持している内容を、ファイルへ書き出します。
+
+        ## ⚠️ この API が必要かは未確定です (Q-015)
+
+        `PUT /plans/{planId}` がその場でファイルに書き込むなら、この API は不要です。
+
+        分けるのは「サーバ側のメモリ上で編集し、明示的に書き出す」作りの場合です。
+        別名保存にも対応しやすくなります。
+
+        **どちらの作りかをサーバ側に確認してください。**
+        不要なら、この操作は削除します。
+
+        確定度: 🔴 推測 (Q-015)
+      operationId: savePlan
+      x-ui-operations: [UI-DIFF-03]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetPath:
+                  type: string
+                  description: |
+                    別名で保存する場合の保存先。省略すると元のファイルに上書きします。
+
+                    ⚠️ 別名保存に対応するかは未確認 (Q-015)
+      responses:
+        "200":
+          description: 書き出せた
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [savedPath, revision]
+                properties:
+                  savedPath:
+                    type: string
+                  revision:
+                    type: string
+        "403":
+          description: 書き込む権限がない
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+
+  parameters:
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      description: 計画を開いたときに発行された識別子
+      schema:
+        type: string
+      example: "pln_01HZX3K8"
+
+  schemas:
+
+    ServerMeta:
+      type: object
+      required: [serverVersion]
+      properties:
+        serverVersion:
+          type: string
+          description: サーバ側の版
+          example: "1.4.2"
+        supportedSchemaVersions:
+          type: array
+          description: 対応している計画ファイルの形式
+          items:
+            type: string
+          example: ["1.0"]
+        capabilities:
+          type: object
+          description: |
+            サーバ側が対応している機能。
+            画面側はこれを見て、使えない機能を隠せます。
+
+            ⚠️ サーバ側がこれを返せるかは未確認 (Q-002)。
+            返せるなら、確認事項の多くを実行時に判定できるようになります。
+          properties:
+            optimisticLock:
+              type: boolean
+              description: 版の照合（If-Match）に対応しているか (Q-005)
+            validation:
+              type: boolean
+              description: 検証に対応しているか (Q-014)
+            criticalChain:
+              type: boolean
+              description: クリティカルチェーンを計算できるか (Q-011)
+            saveAs:
+              type: boolean
+              description: 別名保存に対応しているか (Q-015)
+
+    PlanEnvelope:
+      type: object
+      description: |
+        計画の中身（XML）と、それに付随する情報をひとまとめにしたもの。
+
+        **`xml` と `revision` は必ずセットで扱ってください。**
+        取り違えると、保存時の版の照合が意味をなさなくなります。
+      required: [planId, revision, xml]
+      properties:
+        planId:
+          type: string
+          description: この編集セッションの識別子
+          example: "pln_01HZX3K8"
+        revision:
+          type: string
+          description: |
+            現在の版。**保存するときに `If-Match` で送り返します。**
+          example: "r7"
+        xml:
+          type: string
+          description: 計画の中身そのもの
+        sourcePath:
+          type: string
+          description: 読み込み元のファイルの場所。画面に表示するのに使います
+          example: "C:\\work\\project-a.xml"
+        displayName:
+          type: string
+          description: 画面に表示する名前
+          example: "project-a.xml"
+        schemaVersion:
+          type: string
+          description: この計画ファイルの形式の版
+          example: "1.0"
+        encoding:
+          type: string
+          description: |
+            元のファイルの文字コード。書き出すときに同じものを使います。
+
+            ⚠️ UTF-8 以外があり得るかは未確認 (Q-017)
+          example: "UTF-8"
+
+    OpenPlanRequest:
+      type: object
+      description: |
+        **`sourcePath` と `xml` のどちらか一方**を指定します。
+
+        ⚠️ どちらの方式になるかは未確認です (Q-004)。
+        確定したら、使わない方を削除してください。
+      properties:
+        sourcePath:
+          type: string
+          description: サーバ側から見えるファイルの場所
+          example: "C:\\work\\project-a.xml"
+        xml:
+          type: string
+          description: ファイルの中身そのもの
+        displayName:
+          type: string
+          description: 画面に表示する名前。`xml` を送るときに使います
+
+    ReplacePlanRequest:
+      type: object
+      required: [xml]
+      properties:
+        xml:
+          type: string
+          description: 置き換える計画の中身（全文）
+
+    ValidationResult:
+      type: object
+      required: [valid, issues]
+      properties:
+        valid:
+          type: boolean
+          description: |
+            エラーが 1 件もなければ `true`。
+
+            **警告だけなら `true` です。** 警告は保存を妨げません。
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationIssue"
+
+    ValidationIssue:
+      type: object
+      required: [severity, code, message]
+      properties:
+        severity:
+          type: string
+          enum: [error, warning]
+          description: |
+            - `error` — 保存できない。直すまで先へ進めない
+            - `warning` — 保存できる。利用者の判断に委ねる
+        code:
+          type: string
+          description: 問題の種類
+          example: "CIRCULAR_DEPENDENCY"
+        message:
+          type: string
+          description: 利用者に見せる説明
+          example: "依存関係が循環しています: T003 → T005 → T003"
+        location:
+          type: object
+          description: 問題のある場所。画面上で該当箇所を示すのに使います
+          properties:
+            taskId:
+              type: string
+              example: "T003"
+            line:
+              type: integer
+              description: XML の行番号
+            column:
+              type: integer
+
+    ErrorResponse:
+      type: object
+      description: |
+        **すべてのエラーはこの形で返ります。**
+        画面側はこの形だけを扱えばよくなります。
+
+        エラーコードの一覧は `docs/interface/22-errors.md` にあります。
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 機械が判別するためのコード。**画面側の分岐はこれで行います**
+          example: "PLAN_NOT_FOUND"
+        message:
+          type: string
+          description: |
+            人が読む説明。
+
+            ⚠️ **この文言をそのまま利用者に見せるかは要検討です。**
+            サーバ側の文言が技術的すぎる場合、画面側で `code` から
+            言い換える必要があります (Q-024)。
+          example: "指定された計画が見つかりません"
+        details:
+          type: object
+          description: 種類ごとの追加情報
+          additionalProperties: true
+
+    ConflictError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            details:
+              type: object
+              properties:
+                currentRevision:
+                  type: string
+                  description: |
+                    サーバ側が現在持っている版。
+
+                    画面側はこれを見て「自分の版が古い」と判断し、
+                    最新を取り直します。
+                  example: "r9"
+                expectedRevision:
+                  type: string
+                  description: 送られてきた `If-Match` の値
+                  example: "r7"
+
+  responses:
+
+    BadRequest:
+      description: 要求の形が不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: 指定された計画が見つからない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    UnprocessablePlan:
+      description: |
+        要求の形は正しいが、計画の中身が扱えない。
+
+        XML として壊れている、想定する形式に沿っていない、などの場合です。
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: サーバ側の想定外の失敗
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

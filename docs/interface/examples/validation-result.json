@@ -1,0 +1,20 @@
+{
+  "_comment": "⚠️ POST /plans/{planId}/validate の応答例（仮）。実物は未確認 (Q-014)",
+  "_note": "問題があっても HTTP は 200 です。検証できたこと自体は成功だからです。",
+
+  "valid": false,
+  "issues": [
+    {
+      "severity": "error",
+      "code": "CIRCULAR_DEPENDENCY",
+      "message": "依存関係が循環しています: T003 → T005 → T003",
+      "location": { "taskId": "T003" }
+    },
+    {
+      "severity": "warning",
+      "code": "BUFFER_CONSUMED_HIGH",
+      "message": "プロジェクトバッファの消費が 30% を超えています",
+      "location": { "taskId": "B001" }
+    }
+  ]
+}

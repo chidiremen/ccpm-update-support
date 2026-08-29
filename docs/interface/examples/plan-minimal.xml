@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ⚠️ これは仮のサンプルです (Q-001)
+
+  実物の計画ファイルを入手できていないため、こちら側で構造を想定して作りました。
+  要素名・属性名は実物と違う可能性が高いと考えてください。
+
+  実ファイルを 1 つ入手できたら、このファイルを置き換え、
+  docs/interface/20-data-model.md を書き直してください。
+-->
+<plan schemaVersion="1.0">
+
+  <project>
+    <name>サンプルプロジェクト</name>
+    <startDate>2026-04-01</startDate>
+    <calendar>businessDays</calendar>
+  </project>
+
+  <tasks>
+    <task id="T001" name="設計フェーズ">
+      <task id="T002" name="要件定義">
+        <duration unit="day">8</duration>
+        <start>2026-04-01</start>
+        <finish>2026-04-10</finish>
+        <assignee>佐藤</assignee>
+        <progress>100</progress>
+      </task>
+      <task id="T003" name="基本設計">
+        <duration unit="day">12</duration>
+        <start>2026-04-13</start>
+        <finish>2026-04-28</finish>
+        <assignee>鈴木</assignee>
+        <progress>60</progress>
+      </task>
+    </task>
+
+    <task id="T004" name="実装フェーズ">
+      <task id="T005" name="画面側実装">
+        <duration unit="day">20</duration>
+        <start>2026-04-29</start>
+        <finish>2026-05-26</finish>
+        <assignee>田中</assignee>
+        <progress>0</progress>
+      </task>
+      <task id="T006" name="サーバ側実装">
+        <duration unit="day">15</duration>
+        <start>2026-04-29</start>
+        <finish>2026-05-19</finish>
+        <assignee>高橋</assignee>
+        <progress>0</progress>
+      </task>
+    </task>
+
+    <task id="T007" name="結合試験">
+      <duration unit="day">10</duration>
+      <start>2026-05-27</start>
+      <finish>2026-06-09</finish>
+      <assignee>佐藤</assignee>
+      <progress>0</progress>
+    </task>
+  </tasks>
+
+  <dependencies>
+    <dependency from="T002" to="T003" type="FS" lag="0"/>
+    <dependency from="T003" to="T005" type="FS" lag="0"/>
+    <dependency from="T003" to="T006" type="FS" lag="0"/>
+    <dependency from="T005" to="T007" type="FS" lag="0"/>
+    <dependency from="T006" to="T007" type="FS" lag="0"/>
+  </dependencies>
+
+  <buffers>
+    <!-- プロジェクト全体の最後に置く余裕 -->
+    <buffer id="B001" kind="project" size="10" unit="day" consumed="3"/>
+    <!-- サーバ側実装の流れがクリティカルチェーンに合流する手前の余裕 -->
+    <buffer id="B002" kind="feeding" size="4" unit="day" protects="T007"/>
+  </buffers>
+
+  <criticalChain>
+    <taskRef id="T002"/>
+    <taskRef id="T003"/>
+    <taskRef id="T005"/>
+    <taskRef id="T007"/>
+  </criticalChain>
+
+</plan>

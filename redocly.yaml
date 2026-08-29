@@ -1,0 +1,19 @@
+# OpenAPI の検査設定
+#
+#   npx --yes @redocly/cli@latest lint docs/interface/openapi.yaml
+#
+# 既定の推奨ルールを使いつつ、このリポジトリに当てはまらない
+# 2 つのルールだけを外しています。理由は下記の通りです。
+
+extends:
+  - recommended
+
+rules:
+  # 社内向けの仕様書であり、公開する API ではないため
+  # ライセンス表記は不要。
+  info-license: off
+
+  # /health と /meta は 4XX を返す状況がありません
+  # (引数を取らないため)。形だけの 4XX を書くと、
+  # 実際に起こり得る失敗との区別がつかなくなるため外します。
+  operation-4xx-response: off

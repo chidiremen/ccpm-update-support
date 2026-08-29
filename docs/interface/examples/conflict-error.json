@@ -1,0 +1,11 @@
+{
+  "_comment": "⚠️ PUT /plans/{planId} が 409 を返すときの例（仮）。実物は未確認 (Q-005, Q-025)",
+  "_note": "これは失敗ではなく、他人の変更を消す事故を防いだ状態です。利用者の変更を捨てないでください。",
+
+  "code": "REVISION_CONFLICT",
+  "message": "他の変更と重なっているため保存できませんでした",
+  "details": {
+    "currentRevision": "r9",
+    "expectedRevision": "r7"
+  }
+}

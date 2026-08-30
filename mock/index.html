@@ -490,6 +490,17 @@ details.chglist[hidden] { display: none; }
 .b-plus { font-size: 12px; fill: var(--text-dim); cursor: pointer; user-select: none; font-weight: 700; }
 .b-plus:hover { fill: var(--accent); }
 
+/* ドラッグ中の札。何が起きるかを言葉で出す。
+   色だけでは「緑＝いいこと」までしか伝わらない。 */
+#dragTag {
+  position: fixed; z-index: 90; pointer-events: none;
+  padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  background: var(--add-bg); color: var(--add); border: 1px solid var(--add);
+  box-shadow: var(--shadow); white-space: nowrap;
+}
+#dragTag.ng { background: var(--del-bg); color: var(--del); border-color: var(--del); }
+#dragTag.same { background: var(--panel-2); color: var(--text-dim); border-color: var(--border); }
+
 /* ドラッグ中の受け取り先。どこに入るかを見せる */
 /* 掴んでいる本人は当たり判定から外す。
    自分がカーソルの下にいると、落とし先を自分だと誤判定してしまう。 */
@@ -653,6 +664,9 @@ kbd {
     <span class="tb-sep"></span>
     <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
     <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
+    <span class="tb-sep"></span>
+    <button id="netParent" title="このタスクの親を、一覧から選び直す">親を変更…</button>
+    <button id="netOutdent" title="親から出して 1 段上げる">|← 親から出す</button>
     <button data-netzoom="in">＋</button>
     <button data-netzoom="out">－</button>
     <span class="tb-sep"></span>
@@ -663,7 +677,8 @@ kbd {
     <span class="tb-sep"></span>
     <label><input type="checkbox" id="netBuffers" checked> バッファ・マイルストンを表示</label>
     <span class="spacer"></span>
-    <span class="hint">ダブルクリックで全項目を編集 / 別のタスクの上に落とすとその子になります</span>
+    <span class="hint">ダブルクリックで全項目を編集 ／ 別のタスクの上に落とすと<b>その子</b>に、
+      <b>何もない余白</b>に落とすと<b>最上位</b>に出ます</span>
   </div>
 
   <div class="net-split">
@@ -695,6 +710,7 @@ kbd {
 
 <div id="popLayer"></div>
 <div id="modalLayer"></div>
+<div id="dragTag" hidden></div>
 
 <script>
 "use strict";
@@ -728,7 +744,7 @@ kbd {
      label    画面に出す名前
      grp      core = ツールが意味を理解する / pass = 素通し
      section  ダイアログでの区分け（基本 / 日程 / 体制 / 契約・費用 / 管理 / その他）
-     type     text / multiline / number / date / select / link
+     type     text / multiline / number / date / select / link / parent
      options  select のときの選択肢
      unit     数値に付ける単位
      w        表の列幅（px）
@@ -752,6 +768,8 @@ const FIELDS = [
   { key:'succs',   label:'後続タスク', grp:'core', section:'日程', type:'link',   w:150,
     readonly:true, help:'先行タスクの裏返しなので、ここでは変えられません' },
   { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%' },
+  { key:'parent',  label:'親タスク',   grp:'core', section:'基本', type:'parent', w:150,
+    help:'このタスクが属する大分類。「最上位」を選ぶと親から出ます' },
 
   // ---- 素通し項目（ツールは意味を解釈せず、そのまま保存する） ----
   { key:'assignee',  label:'担当',       grp:'pass', section:'体制', type:'text',   w:76 },
@@ -892,7 +910,6 @@ const state = {
   collapsed: new Set(),
   netScale: 1,
   netPos: {},           // 手で動かしたノードの位置（画面側だけで覚える。Q-020）
-  netDragId: null,      // いま掴んでいるノード（当たり判定から外す）
   showExtras: true,
   allDeps: false,
   drag: null,              // 接続のドラッグ中
@@ -1031,7 +1048,10 @@ function readOnlyReason(t, key) {
   if (t.kind === 'milestone' && key === 'duration') return 'マイルストンは時点なので期間を持ちません';
   return '';
 }
+const TOP_LEVEL_LABEL = '（最上位 — 親なし）';
+
 function getVal(t, key) {
+  if (key === 'parent') return t.parentId ? nameOf(t.parentId) : TOP_LEVEL_LABEL;
   if (key === 'preds') return deps.filter(d => d.to === t.id).map(d => nameOf(d.from)).join(', ');
   if (key === 'succs') return deps.filter(d => d.from === t.id).map(d => nameOf(d.to)).join(', ');
   if (key === 'kind')  return KIND_LABEL[t.kind];
@@ -1052,6 +1072,7 @@ function getVal(t, key) {
 function setVal(t, key, raw) {
   const f = F[key];
   let v = String(raw).trim();
+  if (key === 'parent') return;   // 親は一覧から選ぶ（reparent を通す）
   if (key === 'kind') { t.kind = KIND_OF[v] || 'task'; return; }
   if (f.type === 'number') { const n = Number(v.replace(/[^\d.-]/g,'')); t[key] = isNaN(n) ? 0 : n; }
   else t[key] = v;
@@ -1101,7 +1122,7 @@ function renderGrid() {
       const cc = ['cell'];
       if (f.type === 'number') cc.push('num');
       if (ro) cc.push('ro');
-      if (f.type === 'link') cc.push('linkcell');
+      if (f.type === 'link' || f.type === 'parent') cc.push('linkcell');
       if (r >= lo && r <= hi && c >= lc && c <= hc) cc.push('sel');
       if (r === state.cur.r && c === state.cur.c) cc.push('cursor');
       if (cs) {
@@ -1685,7 +1706,6 @@ function drawNet(n, ds, cs, isBefore) {
   const containers = boxes.filter(b => b.container).sort((a, b) => a.depth - b.depth);
   const containersSvg = containers.map(b => {
     const cls = ['net-box'];
-    if (b.id === state.netDragId) cls.push('grabbed');
     if (ccBox(b.id)) cls.push('cc');
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
@@ -1724,7 +1744,6 @@ function drawNet(n, ds, cs, isBefore) {
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
     if (b.manual) cls.push('moved');
-    if (b.id === state.netDragId) cls.push('grabbed');
     if (isGroup(t)) cls.push('collapsed-group');
     const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
@@ -1866,6 +1885,10 @@ function renderAll() {
   renderGrid(); renderChart(); renderNet(); renderDetail(); renderDiff();
   document.getElementById('btnUndo').disabled = !undoStack.length;
   document.getElementById('btnRedo').disabled = !redoStack.length;
+  const sel = rows()[state.cur.r];
+  document.getElementById('netOutdent').disabled = !sel || !sel.parentId;
+  document.getElementById('netParent').disabled = !sel;
+  document.getElementById('netDel').disabled = !sel;
   if (typeof placeInput === 'function') placeInput();
   syncScroll();
 }
@@ -1944,6 +1967,7 @@ function beginEdit(initial) {
 
   // 先行タスクのセルは文字入力ではなく接続の一覧を開く
   if (f.type === 'link')   { cellInput.value = ''; openConnect(t.id, 'in', cellEl(state.cur.r, state.cur.c)); return; }
+  if (f.type === 'parent') { cellInput.value = ''; openParentPicker(t.id, cellEl(state.cur.r, state.cur.c)); return; }
   if (f.type === 'select') { cellInput.value = ''; openSelect(); return; }
   if (readOnly(t, key))    { cellInput.value = ''; return; }
 
@@ -2012,7 +2036,7 @@ function pasteTSV(text) {
     if (!t) return;
     line.forEach((v, dc) => {
       const key = state.cols[state.cur.c + dc];
-      if (!key || readOnly(t, key) || F[key].type === 'link') return;
+      if (!key || readOnly(t, key) || ['link','parent'].includes(F[key].type)) return;
       setVal(t, key, v);
     });
   });
@@ -2023,7 +2047,7 @@ function clearSel() {
   pushUndo();
   for (let r = s.r0; r <= s.r1; r++) for (let c = s.c0; c <= s.c1; c++) {
     const t = rs[r], key = state.cols[c];
-    if (!readOnly(t, key) && F[key].type !== 'link') setVal(t, key, '');
+    if (!readOnly(t, key) && !['link','parent'].includes(F[key].type)) setVal(t, key, '');
   }
   renderAll();
 }
@@ -2276,9 +2300,11 @@ function openProperties(taskId) {
     const v = String(getVal(t, f.key));
     const mark = f.grp === 'core' ? '<span class="core-mark" title="ツールが意味を理解する項目">中核</span>' : '';
     const help = reason || f.help || '';
-    const wide = (f.type === 'multiline' || f.type === 'link') ? ' wide' : '';
+    const wide = (f.type === 'multiline' || f.type === 'link' || f.type === 'parent') ? ' wide' : '';
     let input;
-    if (f.type === 'link') {
+    if (f.type === 'parent') {
+      input = `<button class="linkbtn" data-parent="1"${ro ? ' disabled' : ''}>${esc(v)} …</button>`;
+    } else if (f.type === 'link') {
       input = `<button class="linkbtn" data-link="${f.key}"${ro ? ' disabled' : ''}>${esc(v) || '（なし）'} …</button>`;
     } else if (f.type === 'multiline') {
       input = `<textarea data-f="${f.key}"${ro ? ' disabled' : ''}>${esc(v)}</textarea>`;
@@ -2325,7 +2351,7 @@ function openProperties(taskId) {
 
   const apply = () => {
     const changes = [];
-    modal.querySelectorAll('[data-f]').forEach(el => {
+    modal.querySelectorAll('[data-f]').forEach(el => {   // parent と link はボタンなので対象外
       if (el.disabled) return;
       const key = el.dataset.f;
       if (String(getVal(t, key)) !== el.value) changes.push([key, el.value]);
@@ -2342,8 +2368,11 @@ function openProperties(taskId) {
   modal.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { act.dataset.act === 'apply' ? apply() : closeModal(); return; }
+    // 閉じる前に位置の基準を取っておく（閉じたあとの要素は座標が 0 になる）
+    const par = e.target.closest('[data-parent]');
+    if (par) { const at = par.getBoundingClientRect(); closeModal(); openParentPicker(taskId, at); return; }
     const link = e.target.closest('[data-link]');
-    if (link) { closeModal(); openConnect(taskId, 'in', null); }
+    if (link) { const at = link.getBoundingClientRect(); closeModal(); openConnect(taskId, 'in', at); }
   });
   modal.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
@@ -2360,6 +2389,26 @@ function openProperties(taskId) {
    ============================================================ */
 function closePop() { document.getElementById('popLayer').innerHTML = ''; }
 
+/* ポップアップの位置決め。
+   基準は要素でも矩形でもよい。
+
+   ⚠️ ダイアログの中のボタンを基準にするときは、
+   **ダイアログを閉じる前に矩形を取っておくこと。**
+   閉じたあとの要素は DOM から外れており、getBoundingClientRect() が
+   すべて 0 を返す。結果、ポップアップが画面の左上に出てタブを覆う。 */
+function placePop(pop, anchor) {
+  const box = (anchor && anchor.getBoundingClientRect) ? anchor.getBoundingClientRect()
+            : (anchor && anchor.bottom !== undefined) ? anchor
+            : { left: window.innerWidth / 2 - 160, bottom: 140 };
+  const w = pop.offsetWidth || 300, h = pop.offsetHeight || 320;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, box.left + window.scrollX));
+  let top = box.bottom + window.scrollY + 4;
+  if (top + h > window.scrollY + window.innerHeight - 8)
+    top = Math.max(window.scrollY + 8, box.top + window.scrollY - h - 4);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+}
+
 function openConnect(taskId, dir, anchorEl) {
   closePop();
   const me = byId(taskId); if (!me) return;
@@ -2375,9 +2424,7 @@ function openConnect(taskId, dir, anchorEl) {
   const lay = document.getElementById('popLayer');
   lay.appendChild(pop);
 
-  const box = anchorEl ? anchorEl.getBoundingClientRect() : { left: 200, bottom: 200 };
-  pop.style.left = Math.min(window.innerWidth - 340, box.left + window.scrollX) + 'px';
-  pop.style.top  = (box.bottom + window.scrollY + 4) + 'px';
+  placePop(pop, anchorEl);
 
   const body = pop.querySelector('#connBody');
   const draw = q => {
@@ -2413,6 +2460,62 @@ function openConnect(taskId, dir, anchorEl) {
       pushUndo();
       deps = deps.filter(d => !(d.from === f && d.to === t));
       renderAll(); openConnect(taskId, dir, anchorEl);
+    }
+  });
+}
+
+/* 親を選ぶ一覧 (UI-COMMON-07)。
+   接続の一覧と同じ作りにしている。覚えることを増やさないため。
+
+   先頭に「最上位」を置くのが肝。ここに出ていないと、
+   「親から出す」方法が画面のどこにも見当たらない状態になる。 */
+function openParentPicker(taskId, anchorEl) {
+  closePop();
+  const me = byId(taskId); if (!me) return;
+
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.innerHTML = `<div class="pop-head">${esc(me.name)} の親タスク</div>
+    <input class="search" placeholder="タスク名で絞り込む…" autocomplete="off">
+    <div class="pop-body" id="parentBody"></div>
+    <div class="pop-foot">図の上でドラッグしても変えられます</div>`;
+  document.getElementById('popLayer').appendChild(pop);
+
+  placePop(pop, anchorEl);
+
+  const body = pop.querySelector('#parentBody');
+  const draw = q => {
+    const cur = me.parentId ?? null;
+    let h = '';
+    if (!q) {
+      h += '<div class="pop-group">親から出す</div>';
+      h += `<div class="pop-item${cur === null ? ' active' : ''}" data-pick="">
+        <span>${TOP_LEVEL_LABEL}</span>${cur === null ? '<span class="sub">いま</span>' : ''}</div>`;
+    }
+    // 自分自身と自分の子孫は選べない（循環するため、一覧から外す）
+    const cands = tasks.filter(t => t.id !== taskId && !isDescendantOf(t.id, taskId)
+      && (!q || t.name.toLowerCase().includes(q.toLowerCase())));
+    h += '<div class="pop-group">このタスクの子にする</div>';
+    h += cands.length ? cands.map(t =>
+      `<div class="pop-item${cur === t.id ? ' active' : ''}" data-pick="${t.id}">
+        <span>${esc(t.name)}</span>
+        <span class="sub">${cur === t.id ? 'いま' : (isGroup(t) ? '枠' : '')}</span></div>`).join('')
+      : '<div class="pop-empty">該当するタスクがありません</div>';
+    body.innerHTML = h;
+  };
+  draw('');
+
+  pop.querySelector('.search').addEventListener('input', e => draw(e.target.value));
+  pop.querySelector('.search').focus();
+  body.addEventListener('click', e => {
+    const pick = e.target.closest('[data-pick]');
+    if (!pick) return;
+    const to = pick.dataset.pick || null;
+    closePop();
+    if (reparent(taskId, to)) {
+      const i = rows().findIndex(t => t.id === taskId);
+      if (i >= 0) { state.cur.r = state.anc.r = i; }
+      renderAll();
     }
   });
 }
@@ -2693,6 +2796,16 @@ function startNodeMove(id, svg, ev) {
   const sx = ev.clientX, sy = ev.clientY;
   let moved = false;
 
+  /* 掴んでいる間は、掴んだノードだけを動かす。
+     動かすたびに再配置すると、枠の大きさが変わって周りが動き、
+     狙いが定まらなくなる（実際そうなっていた）。
+     確定するのは離したときだけ。 */
+  const g = svg.querySelector(`[data-node="${id}"]`);
+  const g0 = g ? g.getAttribute('transform') : null;
+  const m = g0 && g0.match(/translate\(([-\d.]+),\s*([-\d.]+)\)/);
+  const ox = m ? Number(m[1]) : 0, oy = m ? Number(m[2]) : 0;
+  if (g) g.classList.add('grabbed');
+
   /* 離した先の枠が、新しい親になる (UI-NET-14)。
      位置の移動と親の付け替えを、同じドラッグで扱う。
      入れ子の道具では「どこに置いたか」がそのまま所属を意味するのが自然で、
@@ -2700,51 +2813,73 @@ function startNodeMove(id, svg, ev) {
   const dropTargetAt = (cx, cy) => {
     const el = document.elementFromPoint(cx, cy);
     if (!el) return { id: null, ok: true };            // 図の外 → いちばん上の階層
-    const g = el.closest('[data-node]');
-    if (!g) return { id: null, ok: true };
-    const tid = g.dataset.node;
+    const t = el.closest('[data-node]');
+    if (!t) return { id: null, ok: true };
+    const tid = t.dataset.node;
     if (tid === id || isDescendantOf(tid, id)) return { id: tid, ok: false };  // 自分の子孫の中へは入れない
     return { id: tid, ok: true };
   };
-  const markDrop = tgt => {
+
+  const tag = document.getElementById('dragTag');
+  const markDrop = (tgt, cx, cy) => {
     document.querySelectorAll('.net-drop-ok, .net-drop-ng').forEach(n =>
       n.classList.remove('net-drop-ok', 'net-drop-ng'));
-    if (!tgt.id) return;
-    const g = document.querySelector(`#net1 [data-node="${tgt.id}"]`);
-    if (g) g.classList.add(tgt.ok ? 'net-drop-ok' : 'net-drop-ng');
+    if (tgt.id) {
+      const el = svg.querySelector(`[data-node="${tgt.id}"]`);
+      if (el) el.classList.add(tgt.ok ? 'net-drop-ok' : 'net-drop-ng');
+    }
+    // 何が起きるかを言葉で出す。色だけでは「緑＝いいこと」までしか伝わらない
+    const cur = (byId(id) || {}).parentId ?? null;
+    let text, cls = '';
+    if (!tgt.ok) { text = 'ここへは入れられません（自分の子孫です）'; cls = 'ng'; }
+    else if ((tgt.id ?? null) === cur) { text = '位置を動かすだけ（親は変わりません）'; cls = 'same'; }
+    else if (!tgt.id) text = '最上位に出す';
+    else {
+      const to = byId(tgt.id);
+      text = isGroup(to) ? `「${to.name}」の中に入れる` : `「${to.name}」の子にする`;
+    }
+    tag.hidden = false;
+    tag.className = cls;
+    tag.textContent = text;
+    tag.style.left = (cx + 16) + 'px';
+    tag.style.top  = (cy + 18) + 'px';
   };
 
   let drop = { id: null, ok: true };
-  state.netDragId = id;     // 掴んでいる本人は当たり判定から外す（下にあるものを拾うため）
+  const snap = v => Math.round(v / NET_GRID) * NET_GRID;
   const move = e => {
     const dx = (e.clientX - sx) / scale, dy = (e.clientY - sy) / scale;
     if (!moved && Math.hypot(dx, dy) < 4) return;   // 小さな揺れは選択とみなす
     moved = true;
-    const snap = v => Math.round(v / NET_GRID) * NET_GRID;   // 格子に吸着させて揃えやすくする
-    // 絶対位置ではなく「枠の中でのずれ」として持つ。
-    // 絶対位置にすると、親の枠が動いたとき中身が置き去りになる。
-    state.netPos[id] = { dx: snap(base.dx + dx), dy: snap(base.dy + dy) };
-    renderNet();
+    if (g) g.setAttribute('transform', `translate(${ox + snap(dx)},${oy + snap(dy)})`);
     drop = dropTargetAt(e.clientX, e.clientY);
-    markDrop(drop);
+    markDrop(drop, e.clientX, e.clientY);
   };
-  const up = () => {
+
+  const up = e => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     document.querySelectorAll('.net-drop-ok, .net-drop-ng').forEach(n =>
       n.classList.remove('net-drop-ok', 'net-drop-ng'));
-    state.netDragId = null;
-    if (!moved) { renderNet(); return; }
-    if (!drop.ok) { renderNet(); return; }
+    tag.hidden = true;
+    if (g) g.classList.remove('grabbed');
+    if (!moved) return;
+
+    if (!drop.ok) { renderNet(); return; }           // 受け取れない先。元へ戻す
     const cur = (byId(id) || {}).parentId ?? null;
     if ((drop.id ?? null) !== cur) {
-      delete state.netPos[id];              // 引っ越したら位置のずれは持ち越さない
+      delete state.netPos[id];                       // 引っ越したら位置のずれは持ち越さない
       if (reparent(id, drop.id)) {
         const i = rows().findIndex(t => t.id === id);
         if (i >= 0) { state.cur.r = state.anc.r = i; }
       }
       renderAll();
+      return;
     }
+    // 親は変わらない = 位置だけ確定する
+    const dx = (e.clientX - sx) / scale, dy = (e.clientY - sy) / scale;
+    state.netPos[id] = { dx: snap(base.dx + dx), dy: snap(base.dy + dy) };
+    renderNet();
   };
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
@@ -2806,6 +2941,11 @@ document.querySelectorAll('[data-netzoom]').forEach(b =>
 document.getElementById('netFit').onclick = () => { state.netScale = 1; renderNet(); };
 document.getElementById('netTidy').onclick = () => { state.netPos = {}; renderNet(); };
 document.getElementById('netAdd').onclick = () => addTask(null);
+document.getElementById('netParent').onclick = e => {
+  const r = rows()[state.cur.r];
+  if (r) openParentPicker(r.id, e.currentTarget);
+};
+document.getElementById('netOutdent').onclick = () => { outdent(); renderAll(); };
 document.getElementById('netDel').onclick = () => {
   const r = rows()[state.cur.r];
   if (r) deleteTask(r.id);

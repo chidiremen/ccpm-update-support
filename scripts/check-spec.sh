@@ -113,8 +113,48 @@ if [ -n "$unreferenced" ]; then
 fi
 echo
 
-# --- 3. 書きかけの目印 ----------------------------------------------
-echo "[3] 書きかけの目印 (TBD)"
+# --- 3. 項目カタログとモックの一致 ----------------------------------
+echo "[3] 項目カタログとモックの一致"
+echo
+
+CATALOG="docs/interface/24-field-catalog.md"
+MOCK="mock/index.html"
+
+if [ -f "$CATALOG" ] && [ -f "$MOCK" ]; then
+  tmp_doc=$(mktemp); tmp_mock=$(mktemp)
+  # 設計書の「項目の一覧」の節だけを見る。
+  # 属性の説明表にも `key` の形が出てくるため、節で区切らないと拾ってしまう。
+  sed -n '/^## 項目の一覧/,/^---$/p' "$CATALOG" \
+    | grep -oE '^\| `[a-zA-Z0-9_]+`' | tr -d '|` ' | sort -u > "$tmp_doc"
+  # モックの FIELDS から key を拾う
+  sed -n '/^const FIELDS = \[/,/^\];/p' "$MOCK" \
+    | grep -oE "key:'[a-zA-Z0-9_]+'" | sed "s/key:'//; s/'//" | sort -u > "$tmp_mock"
+
+  d=$(wc -l < "$tmp_doc" | tr -d ' ')
+  m=$(wc -l < "$tmp_mock" | tr -d ' ')
+  printf '    設計書 %s 件 / モック %s 件\n' "$d" "$m"
+
+  only_doc=$(comm -23 "$tmp_doc" "$tmp_mock")
+  only_mock=$(comm -13 "$tmp_doc" "$tmp_mock")
+  if [ -n "$only_doc" ] || [ -n "$only_mock" ]; then
+    echo
+    echo "    ✗ 食い違っています:"
+    [ -n "$only_doc" ]  && { echo "      設計書だけにある:"; echo "$only_doc" | sed 's/^/        /'; }
+    [ -n "$only_mock" ] && { echo "      モックだけにある:"; echo "$only_mock" | sed 's/^/        /'; }
+    echo
+    echo "      → 項目を足すときは両方に足してください（$CATALOG が正）"
+    exit_code=1
+  else
+    echo "    ✓ 一致しています"
+  fi
+  rm -f "$tmp_doc" "$tmp_mock"
+else
+  echo "    ⓘ 対象のファイルがないため省略しました"
+fi
+echo
+
+# --- 4. 書きかけの目印 ----------------------------------------------
+echo "[4] 書きかけの目印 (TBD)"
 echo
 
 tbd=$(grep -rn 'TBD' "$DOCS_DIR" 2>/dev/null)

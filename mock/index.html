@@ -410,6 +410,56 @@ details.chglist[hidden] { display: none; }
 .pop-empty { padding: 12px 10px; color: var(--text-faint); font-size: 12px; text-align: center; }
 .pop-foot { padding: 6px 10px; border-top: 1px solid var(--border-2); font-size: 11px; color: var(--text-faint); background: var(--panel-2); }
 
+/* --- プロパティ編集ダイアログ -------------------------------
+   中身は項目定義から作られます。ここには「見た目」しかありません。 */
+.modal-back {
+  position: fixed; inset: 0; background: rgba(10,14,20,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--pop-shadow); width: min(880px, 94vw); max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head {
+  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+  display: flex; align-items: baseline; gap: 10px;
+}
+.modal-head h2 { margin: 0; font-size: 15px; }
+.modal-body { padding: 4px 16px 16px; overflow-y: auto; }
+.modal-foot {
+  padding: 10px 16px; border-top: 1px solid var(--border); background: var(--panel-2);
+  display: flex; align-items: center; gap: 8px;
+}
+.fsec { margin-top: 14px; }
+.fsec > h3 {
+  margin: 0 0 8px; font-size: 11.5px; color: var(--text-dim); font-weight: 700;
+  letter-spacing: .04em; border-bottom: 1px solid var(--border-2); padding-bottom: 4px;
+}
+.fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 16px; }
+.fld { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fld.wide { grid-column: 1 / -1; }
+.fld > label { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+.fld .core-mark {
+  font-size: 9.5px; padding: 0 4px; border-radius: 3px;
+  background: var(--accent-bg); color: var(--accent); font-weight: 700;
+}
+.fld input, .fld select, .fld textarea {
+  font: inherit; font-size: 12.5px; padding: 5px 7px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--panel); color: var(--text); width: 100%;
+}
+.fld textarea { min-height: 54px; resize: vertical; }
+.fld input:disabled, .fld textarea:disabled, .fld select:disabled {
+  background: var(--readonly); color: var(--text-faint); cursor: not-allowed;
+}
+.fld .help { font-size: 10.5px; color: var(--text-faint); }
+.fld .linkbtn {
+  text-align: left; font-size: 12.5px; padding: 5px 7px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel);
+  color: var(--accent); cursor: pointer; width: 100%;
+}
+
 /* --- ネットワーク図 --------------------------------------- */
 .net-wrap { min-height: 200px; max-height: 58vh; overflow: auto; background: var(--panel); position: relative; }
 .net-node.faded { opacity: .28; filter: saturate(.3); }
@@ -437,6 +487,15 @@ details.chglist[hidden] { display: none; }
 .net-box .b-sub { font-size: 10px; fill: var(--text-faint); pointer-events: none; }
 .b-caret { font-size: 11px; fill: var(--text-dim); cursor: pointer; user-select: none; }
 .b-caret:hover { fill: var(--accent); }
+.b-plus { font-size: 12px; fill: var(--text-dim); cursor: pointer; user-select: none; font-weight: 700; }
+.b-plus:hover { fill: var(--accent); }
+
+/* ドラッグ中の受け取り先。どこに入るかを見せる */
+/* 掴んでいる本人は当たり判定から外す。
+   自分がカーソルの下にいると、落とし先を自分だと誤判定してしまう。 */
+.net-node.grabbed, .net-box.grabbed { pointer-events: none; opacity: .75; }
+.net-drop-ok rect.box  { stroke: var(--add); stroke-width: 3; }
+.net-drop-ng rect.box  { stroke: var(--del); stroke-width: 3; stroke-dasharray: 3 3; }
 .net-box.faded { opacity: .35; }
 .net-node.collapsed-group rect.box { stroke-dasharray: 6 3; stroke-width: 2; }
 
@@ -538,7 +597,7 @@ kbd {
     <span class="tb-sep"></span>
     <label><input type="checkbox" id="allDeps"> 依存を全部表示</label>
     <span class="spacer"></span>
-    <span class="hint">セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層</span>
+    <span class="hint">セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層 / 行番号をダブルクリックで全項目</span>
   </div>
 
   <div class="card">
@@ -591,6 +650,9 @@ kbd {
   <div class="toolbar">
     <button id="netFit">全体表示</button>
     <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
+    <span class="tb-sep"></span>
+    <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
+    <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
     <button data-netzoom="in">＋</button>
     <button data-netzoom="out">－</button>
     <span class="tb-sep"></span>
@@ -601,7 +663,7 @@ kbd {
     <span class="tb-sep"></span>
     <label><input type="checkbox" id="netBuffers" checked> バッファ・マイルストンを表示</label>
     <span class="spacer"></span>
-    <span class="hint">ノードを選ぶと左右に接続ハンドルが出ます。クリックでもドラッグでも繋げられます</span>
+    <span class="hint">ダブルクリックで全項目を編集 / 別のタスクの上に落とすとその子になります</span>
   </div>
 
   <div class="net-split">
@@ -632,6 +694,7 @@ kbd {
 </section>
 
 <div id="popLayer"></div>
+<div id="modalLayer"></div>
 
 <script>
 "use strict";
@@ -650,42 +713,83 @@ kbd {
             読んだまま持ち回って保存時にそのまま書き戻します。
             何個増えても I/F 仕様は増えません。
    ============================================================ */
-const FIELDS = [
-  // ---- 中核項目（意味を理解する） ----
-  { key:'name',    label:'タスク名',   grp:'core', type:'text',   w:230 },
-  { key:'kind',    label:'種別',       grp:'core', type:'select', w:88,
-    options:['タスク','マイルストン','バッファ'] },
-  { key:'duration',label:'期間',       grp:'core', type:'number', w:58, unit:'d' },
-  { key:'start',   label:'着手日',     grp:'core', type:'date',   w:92 },
-  { key:'finish',  label:'完了日',     grp:'core', type:'date',   w:92 },
-  { key:'preds',   label:'先行タスク', grp:'core', type:'link',   w:150 },
-  { key:'succs',   label:'後続タスク', grp:'core', type:'link',   w:150 },
-  { key:'progress',label:'進捗',       grp:'core', type:'number', w:54, unit:'%' },
+/* ────────────────────────────────────────────────────────────
+   ★ 項目定義 — ここだけ直せば、画面が全部追従します
 
-  // ---- 素通し項目（意味を解釈しない） ----
-  { key:'assignee',  label:'担当',       grp:'pass', type:'text',   w:76 },
-  { key:'dept',      label:'部署',       grp:'pass', type:'text',   w:96 },
-  { key:'phase',     label:'工程区分',   grp:'pass', type:'select', w:88,
+   表の列も、プロパティ編集ダイアログも、詳細パネルも、
+   すべてこの配列から作られます。項目を足したいなら 1 行足すだけで、
+   他のコードには触る必要がありません。
+
+   属性の意味と、追加・変更の手順は
+   docs/interface/24-field-catalog.md に書いてあります。
+   **そちらが正で、この配列はその写しです。**
+
+     key      データ上の名前
+     label    画面に出す名前
+     grp      core = ツールが意味を理解する / pass = 素通し
+     section  ダイアログでの区分け（基本 / 日程 / 体制 / 契約・費用 / 管理 / その他）
+     type     text / multiline / number / date / select / link
+     options  select のときの選択肢
+     unit     数値に付ける単位
+     w        表の列幅（px）
+     readonly 編集させない項目
+     help     ダイアログに出す補足
+   ──────────────────────────────────────────────────────────── */
+const FIELDS = [
+  // ---- 中核項目（ツールが意味を理解する） ----
+  { key:'name',    label:'タスク名',   grp:'core', section:'基本', type:'text',   w:230,
+    help:'図にも表にも出る名前' },
+  { key:'kind',    label:'種別',       grp:'core', section:'基本', type:'select', w:88,
+    options:['タスク','マイルストン','バッファ'],
+    help:'マイルストンは期間を持たない時点。バッファは余裕時間' },
+  { key:'duration',label:'期間',       grp:'core', section:'日程', type:'number', w:58, unit:'d',
+    help:'変えると完了日も動きます。後続タスクはサーバ側が再計算します' },
+  { key:'start',   label:'着手日',     grp:'core', section:'日程', type:'date',   w:92 },
+  { key:'finish',  label:'完了日',     grp:'core', section:'日程', type:'date',   w:92,
+    help:'着手日と期間から決まります' },
+  { key:'preds',   label:'先行タスク', grp:'core', section:'日程', type:'link',   w:150,
+    help:'このタスクの前に終わるもの。図の矢印と同じ' },
+  { key:'succs',   label:'後続タスク', grp:'core', section:'日程', type:'link',   w:150,
+    readonly:true, help:'先行タスクの裏返しなので、ここでは変えられません' },
+  { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%' },
+
+  // ---- 素通し項目（ツールは意味を解釈せず、そのまま保存する） ----
+  { key:'assignee',  label:'担当',       grp:'pass', section:'体制', type:'text',   w:76 },
+  { key:'dept',      label:'部署',       grp:'pass', section:'体制', type:'text',   w:96 },
+  { key:'approver',  label:'承認者',     grp:'pass', section:'体制', type:'text',   w:76 },
+  { key:'location',  label:'作業場所',   grp:'pass', section:'体制', type:'text',   w:96 },
+  { key:'equipment', label:'使用設備',   grp:'pass', section:'体制', type:'text',   w:110 },
+
+  { key:'phase',     label:'工程区分',   grp:'pass', section:'管理', type:'select', w:88,
     options:['要件','設計','実装','試験','移行','その他'] },
-  { key:'priority',  label:'優先度',     grp:'pass', type:'select', w:64, options:['高','中','低'] },
-  { key:'reviewReq', label:'レビュー',   grp:'pass', type:'select', w:70, options:['要','不要'] },
-  { key:'estimate',  label:'見積根拠',   grp:'pass', type:'text',   w:150 },
-  { key:'approver',  label:'承認者',     grp:'pass', type:'text',   w:76 },
-  { key:'location',  label:'作業場所',   grp:'pass', type:'text',   w:96 },
-  { key:'equipment', label:'使用設備',   grp:'pass', type:'text',   w:110 },
-  { key:'costCode',  label:'費用コード', grp:'pass', type:'text',   w:96 },
-  { key:'vendor',    label:'外注先',     grp:'pass', type:'text',   w:110 },
-  { key:'contractNo',label:'契約番号',   grp:'pass', type:'text',   w:100 },
-  { key:'customer',  label:'顧客',       grp:'pass', type:'text',   w:96 },
-  { key:'deliverable',label:'成果物',    grp:'pass', type:'text',   w:140 },
-  { key:'risk',      label:'リスク',     grp:'pass', type:'text',   w:140 },
-  { key:'version',   label:'版数',       grp:'pass', type:'text',   w:60 },
-  { key:'wbsCode',   label:'WBS 番号',   grp:'pass', type:'text',   w:88 },
-  { key:'createdAt', label:'起票日',     grp:'pass', type:'date',   w:92 },
-  { key:'updatedAt', label:'更新日',     grp:'pass', type:'date',   w:92 },
-  { key:'tags',      label:'タグ',       grp:'pass', type:'text',   w:120 },
-  { key:'note',      label:'備考',       grp:'pass', type:'text',   w:200 },
+  { key:'priority',  label:'優先度',     grp:'pass', section:'管理', type:'select', w:64,
+    options:['高','中','低'] },
+  { key:'reviewReq', label:'レビュー',   grp:'pass', section:'管理', type:'select', w:70,
+    options:['要','不要'] },
+  { key:'wbsCode',   label:'WBS 番号',   grp:'pass', section:'管理', type:'text',   w:88 },
+  { key:'version',   label:'版数',       grp:'pass', section:'管理', type:'text',   w:60 },
+  { key:'tags',      label:'タグ',       grp:'pass', section:'管理', type:'text',   w:120,
+    help:'読点で区切って複数' },
+
+  { key:'costCode',  label:'費用コード', grp:'pass', section:'契約・費用', type:'text', w:96 },
+  { key:'vendor',    label:'外注先',     grp:'pass', section:'契約・費用', type:'text', w:110 },
+  { key:'contractNo',label:'契約番号',   grp:'pass', section:'契約・費用', type:'text', w:100 },
+  { key:'customer',  label:'顧客',       grp:'pass', section:'契約・費用', type:'text', w:96 },
+
+  { key:'deliverable',label:'成果物',    grp:'pass', section:'その他', type:'text',      w:140 },
+  { key:'estimate',  label:'見積根拠',   grp:'pass', section:'その他', type:'multiline', w:150 },
+  { key:'risk',      label:'リスク',     grp:'pass', section:'その他', type:'multiline', w:140 },
+  { key:'note',      label:'備考',       grp:'pass', section:'その他', type:'multiline', w:200 },
+
+  { key:'createdAt', label:'起票日',     grp:'pass', section:'その他', type:'date', w:92,
+    readonly:true, help:'システムが持つ値です' },
+  { key:'updatedAt', label:'更新日',     grp:'pass', section:'その他', type:'date', w:92,
+    readonly:true, help:'システムが持つ値です' },
 ];
+
+// ダイアログの区分けの並び順。ここにない区分けは末尾へ回ります
+const SECTIONS = ['基本', '日程', '体制', '管理', '契約・費用', 'その他'];
+
 const F = Object.fromEntries(FIELDS.map(f => [f.key, f]));
 const KIND_LABEL = { task:'タスク', milestone:'マイルストン', buffer:'バッファ' };
 const KIND_OF = Object.fromEntries(Object.entries(KIND_LABEL).map(([k,v]) => [v,k]));
@@ -788,6 +892,7 @@ const state = {
   collapsed: new Set(),
   netScale: 1,
   netPos: {},           // 手で動かしたノードの位置（画面側だけで覚える。Q-020）
+  netDragId: null,      // いま掴んでいるノード（当たり判定から外す）
   showExtras: true,
   allDeps: false,
   drag: null,              // 接続のドラッグ中
@@ -850,6 +955,51 @@ function hiddenByCollapse(t) {
 }
 const rows = () => tasks.filter(t => !hiddenByCollapse(t));
 
+/* 並び順を階層順へ整える。
+   ガントの並び順は tasks の配列順なので、ネットワーク図で親を変えても
+   配列の位置は動かず、子が親から離れた場所に残ってしまう。
+
+   親子が変わったら必ずここを通す。入り口が 2 つあっても、
+   並びの決まりは 1 つにしておく。 */
+function normalizeOrder() {
+  const out = [];
+  const walk = parentId => {
+    tasks.filter(t => t.parentId === parentId).forEach(t => {
+      out.push(t);
+      walk(t.id);          // 深さ優先。親の直後に子が続く
+    });
+  };
+  walk(null);
+  // 親が消えているなど、たどり着けなかったものは末尾へ（取りこぼさない）
+  tasks.forEach(t => { if (!out.includes(t)) out.push(t); });
+  tasks = out;
+}
+
+// 自分の子孫かどうか（循環する付け替えを防ぐ）
+function isDescendantOf(id, ancestorId) {
+  let c = (byId(id) || {}).parentId, g = 0;
+  while (c && g++ < 60) { if (c === ancestorId) return true; c = (byId(c) || {}).parentId; }
+  return false;
+}
+
+/* 親を付け替える。ネットワーク図からもガントからもここを通す。
+   戻り値は実際に変えたかどうか。 */
+function reparent(id, newParentId) {
+  const t = byId(id);
+  if (!t) return false;
+  if (newParentId === id) return false;
+  if (newParentId && isDescendantOf(newParentId, id)) return false;   // 自分の子孫の中へは入れない
+  if ((t.parentId ?? null) === (newParentId ?? null)) return false;
+  pushUndo();
+  t.parentId = newParentId ?? null;
+  // 新しい親の末尾へ回す（予測しやすいため）
+  tasks = tasks.filter(x => x.id !== id);
+  tasks.push(t);
+  normalizeOrder();
+  if (newParentId) state.collapsed.delete(newParentId);
+  return true;
+}
+
 function newId(prefix) {
   let n = 1;
   while (byId(prefix + String(n).padStart(3,'0'))) n++;
@@ -868,10 +1018,18 @@ function range() {
    （docs/interface/20-data-model.md の読み替え表と同じ考え方）。
    ============================================================ */
 function readOnly(t, key) {
-  if (key === 'succs') return true;                       // 後続は先行の裏返しなので表示のみ
+  if (F[key] && F[key].readonly) return true;             // 項目定義で指定されたもの
   if (isGroup(t) && ['duration','start','finish','progress'].includes(key)) return true;
   if (t.kind === 'milestone' && key === 'duration') return true;   // 時点なので期間なし
   return false;
+}
+// 編集できない理由。ダイアログで添えて出す
+function readOnlyReason(t, key) {
+  if (F[key] && F[key].readonly) return F[key].help || 'この項目は編集できません';
+  if (isGroup(t) && ['duration','start','finish','progress'].includes(key))
+    return '子タスクから決まるため、直接は編集できません';
+  if (t.kind === 'milestone' && key === 'duration') return 'マイルストンは時点なので期間を持ちません';
+  return '';
 }
 function getVal(t, key) {
   if (key === 'preds') return deps.filter(d => d.to === t.id).map(d => nameOf(d.from)).join(', ');
@@ -1527,6 +1685,7 @@ function drawNet(n, ds, cs, isBefore) {
   const containers = boxes.filter(b => b.container).sort((a, b) => a.depth - b.depth);
   const containersSvg = containers.map(b => {
     const cls = ['net-box'];
+    if (b.id === state.netDragId) cls.push('grabbed');
     if (ccBox(b.id)) cls.push('cc');
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
@@ -1537,7 +1696,9 @@ function drawNet(n, ds, cs, isBefore) {
       <rect class="head" width="${b.w}" height="${NET_HEAD}" rx="8" data-boxhead="${b.id}"/>
       <text class="b-caret" data-caret="${b.id}" x="12" y="${NET_HEAD - 7}">▾</text>
       <text class="b-name" x="26" y="${NET_HEAD - 7}">${esc(nm)}</text>
-      <text class="b-sub" x="${b.w - 8}" y="${NET_HEAD - 7}" text-anchor="end">${kids} 件</text>
+      <text class="b-sub" x="${b.w - 26}" y="${NET_HEAD - 7}" text-anchor="end">${kids} 件</text>
+      ${isBefore ? '' : `<text class="b-plus" data-addchild="${b.id}" x="${b.w - 11}" y="${NET_HEAD - 7}"
+        text-anchor="middle"><title>この枠にタスクを足す</title>＋</text>`}
     </g>`;
   }).join('');
 
@@ -1563,6 +1724,7 @@ function drawNet(n, ds, cs, isBefore) {
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
     if (b.manual) cls.push('moved');
+    if (b.id === state.netDragId) cls.push('grabbed');
     if (isGroup(t)) cls.push('collapsed-group');
     const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
@@ -1869,6 +2031,35 @@ function clearSel() {
 /* ============================================================
    14. 行の操作（挿入・削除・階層）
    ============================================================ */
+/* タスクを足す (UI-NET-15)。足したらすぐプロパティ編集を開く。
+   名前が「新しいタスク」のまま図に残ると、何の作業か分からなくなるため。 */
+function addTask(parentId) {
+  const id = newId('T');
+  const t = mk({ id, name:'新しいタスク', parentId: parentId ?? null, duration:1,
+                 start:'2026-05-01', createdAt:'2026-08-29', updatedAt:'2026-08-29' });
+  setVal(t, 'duration', 1);
+  pushUndo();
+  tasks.push(t);
+  normalizeOrder();
+  if (parentId) state.collapsed.delete(parentId);
+  const i = rows().findIndex(x => x.id === id);
+  if (i >= 0) { state.cur.r = state.anc.r = i; }
+  renderAll();
+  openProperties(id);
+}
+
+// 選択中のタスクを、子孫ごと削除する
+function deleteTask(id) {
+  const t = byId(id); if (!t) return;
+  const victims = new Set([id, ...descendants(id).map(d => d.id)]);
+  pushUndo();
+  tasks = tasks.filter(x => !victims.has(x.id));
+  deps = deps.filter(d => !victims.has(d.from) && !victims.has(d.to));
+  victims.forEach(v => delete state.netPos[v]);
+  state.anc.r = state.cur.r = Math.min(state.cur.r, Math.max(0, rows().length - 1));
+  renderAll();
+}
+
 function insertRow() {
   const rs = rows(), at = rs[state.cur.r];
   const id = newId('T');
@@ -2047,6 +2238,7 @@ function applyRowDrop(moving, drop) {
     undoStack.pop();          // 位置も親も変わっていない
     renderAll(); return;
   }
+  normalizeOrder();           // 並びの決まりは 1 つに
 
   // 折りたたまれた親の中へ入れたときは開く（消えたように見えるため）
   if (newParent) state.collapsed.delete(newParent);
@@ -2054,6 +2246,109 @@ function applyRowDrop(moving, drop) {
   const i = rows().findIndex(t => t.id === top.id);
   if (i >= 0) { state.cur.r = state.anc.r = i; }
   renderAll();
+}
+
+/* ============================================================
+   14.7 プロパティ編集ダイアログ (UI-COMMON-05)
+
+   ★ 中身は項目定義 (FIELDS) から自動で作られます。
+     項目を足したいときは FIELDS に 1 行足すだけで、
+     ダイアログにも表の列にも自動で現れます。
+     この関数を直す必要はありません。
+
+   手順は docs/interface/24-field-catalog.md に書いてあります。
+   ============================================================ */
+function closeModal() { document.getElementById('modalLayer').innerHTML = ''; }
+
+function openProperties(taskId) {
+  const t = byId(taskId);
+  if (!t) return;
+  closeModal(); closePop();
+
+  // 区分けごとに項目をまとめる。並び順は SECTIONS に従う
+  const bySection = {};
+  FIELDS.forEach(f => (bySection[f.section || 'その他'] ||= []).push(f));
+  const order = [...SECTIONS, ...Object.keys(bySection).filter(k => !SECTIONS.includes(k))];
+
+  const field = f => {
+    const ro = readOnly(t, f.key);
+    const reason = ro ? readOnlyReason(t, f.key) : '';
+    const v = String(getVal(t, f.key));
+    const mark = f.grp === 'core' ? '<span class="core-mark" title="ツールが意味を理解する項目">中核</span>' : '';
+    const help = reason || f.help || '';
+    const wide = (f.type === 'multiline' || f.type === 'link') ? ' wide' : '';
+    let input;
+    if (f.type === 'link') {
+      input = `<button class="linkbtn" data-link="${f.key}"${ro ? ' disabled' : ''}>${esc(v) || '（なし）'} …</button>`;
+    } else if (f.type === 'multiline') {
+      input = `<textarea data-f="${f.key}"${ro ? ' disabled' : ''}>${esc(v)}</textarea>`;
+    } else if (f.type === 'select') {
+      input = `<select data-f="${f.key}"${ro ? ' disabled' : ''}>` +
+        (f.options || []).map(o => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('') + '</select>';
+    } else {
+      const it = f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text';
+      input = `<input type="${it}" data-f="${f.key}" value="${esc(v)}"${ro ? ' disabled' : ''}>`;
+    }
+    return `<div class="fld${wide}">
+      <label>${esc(f.label)}${f.unit ? `（${f.unit}）` : ''}${mark}</label>
+      ${input}
+      ${help ? `<span class="help">${esc(help)}</span>` : ''}
+    </div>`;
+  };
+
+  const body = order.filter(sec => bySection[sec]).map(sec =>
+    `<div class="fsec"><h3>${esc(sec)}</h3><div class="fgrid">` +
+    bySection[sec].map(field).join('') + '</div></div>').join('');
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2>${esc(t.name)}</h2>
+      <span class="hint">${esc(t.id)} ・ ${esc(KIND_LABEL[t.kind])}</span>
+      <span class="spacer"></span>
+      <span class="hint">項目 ${FIELDS.length} 件</span>
+    </div>
+    <div class="modal-body">${body}</div>
+    <div class="modal-foot">
+      <span class="hint">「中核」はツールが意味を理解する項目です。それ以外は内容を解釈せずそのまま保存します</span>
+      <span class="spacer"></span>
+      <button data-act="cancel">取消</button>
+      <button class="primary" data-act="apply">適用</button>
+    </div>
+  </div>`;
+  document.getElementById('modalLayer').appendChild(back);
+
+  const modal = back.querySelector('.modal');
+  const firstInput = modal.querySelector('input:not([disabled]), textarea:not([disabled]), select:not([disabled])');
+  if (firstInput) firstInput.focus();
+
+  const apply = () => {
+    const changes = [];
+    modal.querySelectorAll('[data-f]').forEach(el => {
+      if (el.disabled) return;
+      const key = el.dataset.f;
+      if (String(getVal(t, key)) !== el.value) changes.push([key, el.value]);
+    });
+    if (changes.length) {
+      pushUndo();
+      changes.forEach(([k, v]) => setVal(byId(taskId), k, v));
+    }
+    closeModal();
+    renderAll();
+  };
+
+  back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+  modal.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]');
+    if (act) { act.dataset.act === 'apply' ? apply() : closeModal(); return; }
+    const link = e.target.closest('[data-link]');
+    if (link) { closeModal(); openConnect(taskId, 'in', null); }
+  });
+  modal.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); apply(); }
+  });
 }
 
 /* ============================================================
@@ -2204,6 +2499,17 @@ function openColumns(anchorEl) {
 /* ============================================================
    17. 操作の受け付け
    ============================================================ */
+
+/* ダブルクリックの自前判定。
+   pointerdown で preventDefault() すると、ブラウザはマウス互換イベントを
+   出さなくなる。dblclick もその一つなので、標準の仕組みには頼れない。 */
+let lastTap = { key: '', t: 0 };
+function doubleTap(key) {
+  const now = Date.now();
+  const hit = key === lastTap.key && now - lastTap.t < 420;
+  lastTap = { key, t: hit ? 0 : now };
+  return hit;
+}
 const paneLeft  = document.getElementById('paneLeft');
 const paneRight = document.getElementById('paneRight');
 
@@ -2248,6 +2554,7 @@ document.getElementById('grid').addEventListener('pointerdown', e => {
     }
     renderAll(); placeInput(); focusGrid();
     e.preventDefault();
+    if (doubleTap('rn:' + r)) { const t = rows()[r]; if (t) openProperties(t.id); return; }
     startRowDrag(r, e);
     return;
   }
@@ -2260,10 +2567,9 @@ document.getElementById('grid').addEventListener('pointerdown', e => {
   if (e.shiftKey) { state.cur.r = r; state.cur.c = c; }
   else { state.cur.r = state.anc.r = r; state.cur.c = state.anc.c = c; }
   renderAll(); placeInput(); focusGrid();
+  if (doubleTap(`cell:${r},${c}`)) beginEdit();
 });
-document.getElementById('grid').addEventListener('dblclick', e => {
-  if (e.target.closest('td.cell')) beginEdit();
-});
+
 
 // --- キーボード（Excel 風）
 cellInput.addEventListener('keydown', e => {
@@ -2332,6 +2638,10 @@ document.getElementById('split').addEventListener('pointerdown', e => {
 
 // --- ネットワーク図
 document.querySelector('.net-split').addEventListener('pointerdown', e => {
+  // 枠の中にタスクを足す (UI-NET-15)
+  const plus = e.target.closest('[data-addchild]');
+  if (plus) { e.preventDefault(); addTask(plus.dataset.addchild); return; }
+
   // 畳む・開く。ガントの折りたたみと同じ状態を使う (UI-NET-13)
   const caret = e.target.closest('[data-caret]');
   if (caret) {
@@ -2354,6 +2664,8 @@ document.querySelector('.net-split').addEventListener('pointerdown', e => {
 
   if (grabbable) {
     const id = grabbable.dataset.node;
+    // ダブルクリックでプロパティ編集 (UI-COMMON-05)
+    if (doubleTap('node:' + id)) { e.preventDefault(); openProperties(id); return; }
     // 掴むのを先にする。renderAll() で要素が DOM から外れ、
     // あとから ownerSVGElement を取ろうとすると null になる
     startNodeMove(id, grabbable.ownerSVGElement, e);
@@ -2381,6 +2693,29 @@ function startNodeMove(id, svg, ev) {
   const sx = ev.clientX, sy = ev.clientY;
   let moved = false;
 
+  /* 離した先の枠が、新しい親になる (UI-NET-14)。
+     位置の移動と親の付け替えを、同じドラッグで扱う。
+     入れ子の道具では「どこに置いたか」がそのまま所属を意味するのが自然で、
+     覚えることが増えない。 */
+  const dropTargetAt = (cx, cy) => {
+    const el = document.elementFromPoint(cx, cy);
+    if (!el) return { id: null, ok: true };            // 図の外 → いちばん上の階層
+    const g = el.closest('[data-node]');
+    if (!g) return { id: null, ok: true };
+    const tid = g.dataset.node;
+    if (tid === id || isDescendantOf(tid, id)) return { id: tid, ok: false };  // 自分の子孫の中へは入れない
+    return { id: tid, ok: true };
+  };
+  const markDrop = tgt => {
+    document.querySelectorAll('.net-drop-ok, .net-drop-ng').forEach(n =>
+      n.classList.remove('net-drop-ok', 'net-drop-ng'));
+    if (!tgt.id) return;
+    const g = document.querySelector(`#net1 [data-node="${tgt.id}"]`);
+    if (g) g.classList.add(tgt.ok ? 'net-drop-ok' : 'net-drop-ng');
+  };
+
+  let drop = { id: null, ok: true };
+  state.netDragId = id;     // 掴んでいる本人は当たり判定から外す（下にあるものを拾うため）
   const move = e => {
     const dx = (e.clientX - sx) / scale, dy = (e.clientY - sy) / scale;
     if (!moved && Math.hypot(dx, dy) < 4) return;   // 小さな揺れは選択とみなす
@@ -2390,10 +2725,26 @@ function startNodeMove(id, svg, ev) {
     // 絶対位置にすると、親の枠が動いたとき中身が置き去りになる。
     state.netPos[id] = { dx: snap(base.dx + dx), dy: snap(base.dy + dy) };
     renderNet();
+    drop = dropTargetAt(e.clientX, e.clientY);
+    markDrop(drop);
   };
   const up = () => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
+    document.querySelectorAll('.net-drop-ok, .net-drop-ng').forEach(n =>
+      n.classList.remove('net-drop-ok', 'net-drop-ng'));
+    state.netDragId = null;
+    if (!moved) { renderNet(); return; }
+    if (!drop.ok) { renderNet(); return; }
+    const cur = (byId(id) || {}).parentId ?? null;
+    if ((drop.id ?? null) !== cur) {
+      delete state.netPos[id];              // 引っ越したら位置のずれは持ち越さない
+      if (reparent(id, drop.id)) {
+        const i = rows().findIndex(t => t.id === id);
+        if (i >= 0) { state.cur.r = state.anc.r = i; }
+      }
+      renderAll();
+    }
   };
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
@@ -2454,6 +2805,11 @@ document.querySelectorAll('[data-netzoom]').forEach(b =>
   });
 document.getElementById('netFit').onclick = () => { state.netScale = 1; renderNet(); };
 document.getElementById('netTidy').onclick = () => { state.netPos = {}; renderNet(); };
+document.getElementById('netAdd').onclick = () => addTask(null);
+document.getElementById('netDel').onclick = () => {
+  const r = rows()[state.cur.r];
+  if (r) deleteTask(r.id);
+};
 
 // 差分の見せ方の切替（ガントとネットワーク図の両方に同じボタンを置いている）
 document.querySelectorAll('[data-diff]').forEach(b => b.onclick = () => {
@@ -2512,6 +2868,18 @@ document.querySelectorAll('[data-ratio]').forEach(b => b.onclick = () => {
 splitterEl.addEventListener('dblclick', () => {
   const split = document.getElementById('split');
   setRatio(split.getBoundingClientRect().width * 0.5);
+});
+
+// ネットワーク図で Delete キー → 選択中のタスクを削除
+document.addEventListener('keydown', e => {
+  if (state.screen !== 'net') return;
+  if (document.querySelector('.modal-back')) return;         // ダイアログ中は効かせない
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  if (e.key === 'Delete') {
+    const r = rows()[state.cur.r];
+    if (r) { e.preventDefault(); deleteTask(r.id); }
+  }
+  if (e.key === 'Escape') closeModal();
 });
 
 // ポップアップの外側をクリックしたら閉じる

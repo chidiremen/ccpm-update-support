@@ -198,6 +198,31 @@ table.grid .rownum {
 table.grid thead .rownum { z-index: 5; }
 table.grid tr.rowsel .rownum { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
 
+/* 行番号の列は「つまみ」。掴めることが見て分かるようにする。
+   分からなければ、ドラッグできることに気づかれない。 */
+table.grid td.rownum { cursor: grab; position: relative; touch-action: none; }
+table.grid td.rownum::after {
+  content: '⠿'; position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: var(--text-faint); opacity: 0; transition: opacity .1s;
+}
+table.grid tr:hover td.rownum::after,
+table.grid tr.rowsel td.rownum::after { opacity: .8; }
+table.grid tr.rowdragging td { opacity: .4; }
+
+/* ドラッグ中の挿入位置 */
+#dropLine {
+  position: absolute; height: 0; border-top: 2px solid var(--accent);
+  z-index: 30; pointer-events: none;
+}
+#dropLine::before {
+  content: ''; position: absolute; left: -4px; top: -5px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}
+#dropDepth {
+  position: absolute; z-index: 30; pointer-events: none;
+  border-left: 2px dashed var(--accent); height: 18px; opacity: .8;
+}
+
 td.cell { cursor: cell; }
 td.cell.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 11.5px; }
 td.cell.ro { background: var(--readonly); color: var(--text-faint); cursor: default; }
@@ -390,7 +415,12 @@ details.chglist[hidden] { display: none; }
 .net-node.buffer rect.box { fill: var(--buffer-bg); stroke: var(--buffer); stroke-dasharray: 4 3; }
 .net-node.milestone rect.box { fill: var(--ms-bg); stroke: var(--ms); stroke-width: 2; }
 .net-node.sel rect.box { stroke: var(--accent); stroke-width: 3; }
-.net-node { cursor: pointer; }
+/* 手で動かしたノード。「整列」で元に戻ることが分かるように印を付ける */
+.net-node.moved rect.box { filter: drop-shadow(0 2px 3px rgba(0,0,0,.28)); }
+.net-node { cursor: grab; }
+.net-node:active { cursor: grabbing; }
+.net-wrap.panning { cursor: grabbing; }
+.net-wrap { touch-action: none; }
 .net-node .n-name { font-size: 11.5px; font-weight: 600; fill: var(--text); }
 .net-node .n-sub  { font-size: 10px; fill: var(--text-dim); font-family: var(--mono); }
 .net-edge { stroke: var(--text-faint); stroke-width: 1.4; fill: none; opacity: .7; }
@@ -493,6 +523,8 @@ kbd {
       <div class="pane-left" id="paneLeft">
         <table class="grid" id="grid"></table>
         <input class="celledit idle" id="cellInput" autocomplete="off" spellcheck="false">
+        <div id="dropLine" hidden></div>
+        <div id="dropDepth" hidden></div>
       </div>
       <div class="splitter" id="splitter" title="ドラッグで幅を変えられます"></div>
       <div class="pane-right" id="paneRight">
@@ -535,6 +567,7 @@ kbd {
 <section class="screen" id="screen-net" hidden>
   <div class="toolbar">
     <button id="netFit">全体表示</button>
+    <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
     <button data-netzoom="in">＋</button>
     <button data-netzoom="out">－</button>
     <span class="tb-sep"></span>
@@ -724,6 +757,7 @@ const state = {
   dayW: UNITS.week.dayW,
   collapsed: new Set(),
   netScale: 1,
+  netPos: {},           // 手で動かしたノードの位置（画面側だけで覚える。Q-020）
   showExtras: true,
   allDeps: false,
   drag: null,              // 接続のドラッグ中
@@ -1132,12 +1166,17 @@ function drawDeps(n, ds, list, x, cs) {
    9. ネットワーク図
    接続の UI はガントと同じ考え方（ハンドル＋ポップアップ＋ドラッグ）
    ============================================================ */
-const NW = 142, NH = 52, GX = 66, GY = 26;
+// ノードの大きさと間隔。名前を 2 行で見せたいので、以前より縦を広げ、
+// 段の間隔は詰めた（横に長すぎて全体が見えなかったため）。
+const NW = 150, NH = 56, GX = 48, GY = 22;
+const NET_GRID = 8;   // 手で動かすときの吸着
 
 function netLayout() {
   const leaves = tasks.filter(t => !isGroup(t) && (state.showExtras || t.kind === 'task'));
   const ids = new Set(leaves.map(t => t.id));
   const ed = deps.filter(d => ids.has(d.from) && ids.has(d.to));
+
+  // --- 段（先行タスクからの最長距離）
   const layer = {};
   leaves.forEach(t => layer[t.id] = 0);
   for (let i = 0; i < leaves.length + 1; i++) {
@@ -1147,13 +1186,96 @@ function netLayout() {
   }
   const byLayer = {};
   leaves.forEach(t => (byLayer[layer[t.id]] ||= []).push(t));
+  const layerKeys = Object.keys(byLayer).map(Number).sort((a,b) => a-b);
+
+  /* --- 段の中の並べ替え
+     つながっている相手の位置の平均に寄せて並べ替える。これを数回繰り返すと
+     線の交差が大きく減る。以前は元の並び順のまま置いていたため、
+     線が交差しまくって読めなかった。 */
+  const order = {};   // id -> 段の中での位置
+  layerKeys.forEach(L => byLayer[L].forEach((t, i) => order[t.id] = i));
+
+  const meanOf = (id, side) => {
+    const rel = side === 'in' ? ed.filter(d => d.to === id).map(d => d.from)
+                              : ed.filter(d => d.from === id).map(d => d.to);
+    const vals = rel.map(r => order[r]).filter(v => v !== undefined);
+    return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
+  };
+  for (let pass = 0; pass < 4; pass++) {
+    // 前から後ろへ（先行タスクに寄せる）、次に後ろから前へ（後続に寄せる）
+    const seq = pass % 2 === 0 ? layerKeys : [...layerKeys].reverse();
+    const side = pass % 2 === 0 ? 'in' : 'out';
+    seq.forEach(L => {
+      const arr = byLayer[L];
+      const key = new Map(arr.map(t => [t.id, meanOf(t.id, side)]));
+      arr.sort((a, b) => {
+        const ka = key.get(a.id), kb = key.get(b.id);
+        if (ka === null && kb === null) return order[a.id] - order[b.id];
+        if (ka === null) return 1;
+        if (kb === null) return -1;
+        return ka - kb;
+      });
+      arr.forEach((t, i) => order[t.id] = i);
+    });
+  }
+
+  // --- 座標。手で動かしたものはその位置を使う
   const pos = {};
-  Object.keys(byLayer).forEach(L => byLayer[L].forEach((t, i) => {
-    pos[t.id] = { x: 24 + Number(L) * (NW + GX), y: 20 + i * (NH + GY), t };
+  layerKeys.forEach(L => byLayer[L].forEach((t, i) => {
+    const manual = state.netPos[t.id];
+    pos[t.id] = manual
+      ? { x: manual.x, y: manual.y, t, manual: true }
+      : { x: 20 + L * (NW + GX), y: 16 + i * (NH + GY), t };
   }));
-  const cols = Math.max(0, ...Object.values(layer)) + 1;
-  const maxRows = Math.max(1, ...Object.values(byLayer).map(a => a.length));
-  return { pos, ed, w: 48 + cols * (NW + GX), h: 40 + maxRows * (NH + GY) };
+
+  const xs = Object.values(pos).map(p => p.x), ys = Object.values(pos).map(p => p.y);
+  const baseY = Math.max(...ys, 0) + NH;
+  // 段をまたぐ長い線は下へ迂回させるので、その分の高さを足しておく
+  const longest = ed.reduce((a, d) => Math.max(a, (layer[d.to] ?? 0) - (layer[d.from] ?? 0)), 1);
+  const flyover = longest > 1 ? 26 + longest * 8 : 0;
+  return {
+    pos, ed, layer, baseY,
+    w: Math.max(...xs, 0) + NW + 40,
+    h: baseY + flyover + 30,
+  };
+}
+
+const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// 名前を指定の文字数で折り返す。行数を超えたぶんだけ「…」で切る
+function wrapName(name, per, maxLines) {
+  const out = [];
+  let rest = String(name);
+  while (rest.length && out.length < maxLines) {
+    if (out.length === maxLines - 1 && rest.length > per) { out.push(rest.slice(0, per - 1) + '…'); break; }
+    out.push(rest.slice(0, per));
+    rest = rest.slice(per);
+  }
+  return out.length ? out : [''];
+}
+
+/* 配置の良し悪しを測る目安（検証で使う）。
+   数えるのは「線がノードの上を通っている数」。
+   線どうしの交差より、こちらのほうが読みにくさに直結する。 */
+function netEdgesOverNodes() {
+  const { pos, ed, layer } = netLayout();
+  let n = 0;
+  ed.forEach(d => {
+    const a = pos[d.from], b = pos[d.to];
+    if (!a || !b) return;
+    const span = (layer[d.to] ?? 0) - (layer[d.from] ?? 0);
+    if (span > 1 && !a.manual && !b.manual) return;   // 下へ迂回するので重ならない
+    const x1 = a.x + NW, y1 = a.y + NH/2, x2 = b.x, y2 = b.y + NH/2;
+    Object.entries(pos).forEach(([id, q]) => {
+      if (id === d.from || id === d.to) return;
+      // 線分がノードの四角と交わるか（端点を少しずつ進めて判定）
+      for (let s = 0; s <= 1; s += 0.02) {
+        const x = x1 + (x2 - x1) * s, y = y1 + (y2 - y1) * s;
+        if (x > q.x && x < q.x + NW && y > q.y && y < q.y + NH) { n++; return; }
+      }
+    });
+  });
+  return n;
 }
 
 function renderNet() {
@@ -1165,7 +1287,7 @@ function renderNet() {
 }
 
 function drawNet(n, ds, cs, isBefore) {
-  const { pos, ed, w, h } = withData(ds, netLayout);
+  const { pos, ed, layer, baseY, w, h } = withData(ds, netLayout);
   const svg = document.getElementById('net' + n);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.setAttribute('width', Math.round(w * state.netScale));
@@ -1186,26 +1308,46 @@ function drawNet(n, ds, cs, isBefore) {
     const on = CRITICAL.has(d.from) && CRITICAL.has(d.to);
     let dim = curId && !(related.has(d.from) && related.has(d.to)) ? ' dim' : '';
     if (cs && !cs.deps.has(d.from + '→' + d.to)) dim = ' dim';
-    return `<path class="net-edge${on?' cc':''}${dim}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2-7},${y2}"
-      marker-end="url(#${on?'arrCC':'arr'})"/>`;
+
+    /* 段をまたぐ長い線は、途中のノードの上を突っ切ってしまい読めなくなる。
+       下へ迂回させると、どのノードとも重ならず経路も追える。 */
+    const span = (layer[d.to] ?? 0) - (layer[d.from] ?? 0);
+    let path;
+    if (span > 1 && !a.manual && !b.manual) {
+      const dip = baseY + 14 + span * 8;
+      path = `M${x1},${y1} C${x1+34},${y1} ${x1+24},${dip} ${mx},${dip} C${x2-24},${dip} ${x2-34},${y2} ${x2-7},${y2}`;
+    } else {
+      path = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2-7},${y2}`;
+    }
+    return `<path class="net-edge${on?' cc':''}${dim}" d="${path}" marker-end="url(#${on?'arrCC':'arr'})"/>`;
   }).join('');
 
-  const nodes = Object.entries(pos).map(([id, p]) => {
+  // 選択中のノードと手で動かしたノードは最後に描く。
+  // SVG は後に書いたものが前面に来るため、これで他のノードの裏に隠れなくなる。
+  const entries = Object.entries(pos).sort((a, b) => {
+    const rank = ([id, q]) => (id === curId ? 2 : q.manual ? 1 : 0);
+    return rank(a) - rank(b);
+  });
+  const nodes = entries.map(([id, p]) => {
     const t = p.t, cls = ['net-node', t.kind];
     if (CRITICAL.has(id)) cls.push('cc');
     if (id === curId) cls.push('sel');
     if (cs && !cs.ids.has(id)) cls.push('faded');
+    if (p.manual) cls.push('moved');
     const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
               : `${t.duration}d ・ ${t.assignee || '—'}`;
-    const nm = t.name.length > 11 ? t.name.slice(0,10) + '…' : t.name;
+    // 名前は 2 行まで折り返す。1 行に詰めて「…」で切ると何のタスクか分からない
+    const lines = wrapName(t.name, 11, 2);
+    const nameSvg = lines.map((ln, li) =>
+      `<text class="n-name" x="11" y="${19 + li * 14}">${esc(ln)}</text>`).join('');
     const handles = (id === curId && !isBefore) ? `
       <circle class="net-handle" data-nethandle="in"  data-id="${id}" cx="0"  cy="${NH/2}" r="6"/>
       <circle class="net-handle" data-nethandle="out" data-id="${id}" cx="${NW}" cy="${NH/2}" r="6"/>` : '';
     return `<g class="${cls.join(' ')}" data-node="${id}" transform="translate(${p.x},${p.y})">
       <rect class="box" width="${NW}" height="${NH}" rx="6"/>
-      <text class="n-name" x="11" y="21">${nm}</text>
-      <text class="n-sub"  x="11" y="39">${sub}</text>${handles}</g>`;
+      ${nameSvg}
+      <text class="n-sub"  x="11" y="${NH - 10}">${esc(sub)}</text>${handles}</g>`;
   }).join('');
 
   svg.innerHTML = `<defs>
@@ -1543,6 +1685,135 @@ function outdent() {
 }
 
 /* ============================================================
+   14.5 行のドラッグ — 並べ替えと親子関係の変更 (UI-GANTT-25)
+
+   縦の位置で「どこに入るか」、横の位置で「どの階層に入るか」を決める。
+   1 回のドラッグで並べ替えと親子変更の両方ができる。
+
+   キーボード（Alt+←→）でも同じことができる。どちらでも操作できることが要件。
+   ============================================================ */
+const INDENT_PX = 14;   // 1 段あたりの横幅。表の描画と合わせる
+
+function startRowDrag(startRow, ev) {
+  ev.preventDefault();
+  const rs = rows();
+
+  // 選択範囲にかかっていれば範囲ごと、そうでなければその行だけ動かす
+  const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
+  const inSel = startRow >= lo && startRow <= hi;
+  const from = inSel ? lo : startRow, to = inSel ? hi : startRow;
+
+  // 動かす行と、その子孫。親だけ動いて子が置き去りになると計画が壊れる
+  const moving = [];
+  for (let r = from; r <= to; r++) {
+    const t = rs[r]; if (!t || moving.includes(t)) continue;
+    moving.push(t);
+    descendants(t.id).forEach(d => { if (!moving.includes(d)) moving.push(d); });
+  }
+  const movingIds = new Set(moving.map(t => t.id));
+
+  const host = document.getElementById('paneLeft');
+  const line = document.getElementById('dropLine');
+  const dep  = document.getElementById('dropDepth');
+  document.querySelectorAll('#grid tbody tr').forEach((tr, i) => {
+    if (i >= from && i <= to) tr.classList.add('rowdragging');
+  });
+
+  const sx = ev.clientX, sy = ev.clientY;
+  let drop = null, started = false;
+
+  const move = e => {
+    // クリックのわずかな揺れで並べ替えが確定しないようにする
+    if (!started && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
+    started = true;
+    const hb = host.getBoundingClientRect();
+    // どの行の境目に落とすか
+    const trs = [...document.querySelectorAll('#grid tbody tr')];
+    let idx = trs.length;
+    for (let i = 0; i < trs.length; i++) {
+      const b = trs[i].getBoundingClientRect();
+      if (e.clientY < b.top + b.height / 2) { idx = i; break; }
+    }
+    // 動かす行そのものの中には落とせない
+    while (idx > 0 && movingIds.has(rs[idx - 1] && rs[idx - 1].id) && idx - 1 >= from && idx - 1 <= to) idx--;
+
+    // 直前の行より 1 段深いところまで。それ以上だと親のいない子ができる
+    const prev = rs.slice(0, idx).reverse().find(t => !movingIds.has(t.id));
+    const maxDepth = prev ? depth(prev) + (isGroup(prev) || true ? 1 : 0) : 0;
+    const wanted = Math.round((e.clientX - sx) / INDENT_PX) + (rs[from] ? depth(rs[from]) : 0);
+    const d = Math.max(0, Math.min(maxDepth, wanted));
+    drop = { idx, depth: d, prev };
+
+    const y = idx < trs.length
+      ? trs[idx].getBoundingClientRect().top - hb.top + host.scrollTop
+      : trs[trs.length - 1].getBoundingClientRect().bottom - hb.top + host.scrollTop;
+    line.hidden = false;
+    line.style.top = y + 'px';
+    line.style.left = (34 + d * INDENT_PX) + 'px';
+    line.style.width = (host.scrollWidth - 34 - d * INDENT_PX - 4) + 'px';
+    dep.hidden = false;
+    dep.style.top = (y - 9) + 'px';
+    dep.style.left = (34 + d * INDENT_PX) + 'px';
+  };
+
+  const up = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    line.hidden = true; dep.hidden = true;
+    document.querySelectorAll('.rowdragging').forEach(n => n.classList.remove('rowdragging'));
+    if (drop) applyRowDrop(moving, drop);
+    else renderAll();
+  };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
+function applyRowDrop(moving, drop) {
+  const rs = rows();
+  const anchor = rs[drop.idx] || null;           // ここの直前に入れる
+  const movingIds = new Set(moving.map(t => t.id));
+  if (anchor && movingIds.has(anchor.id)) { renderAll(); return; }
+
+  // 新しい親を決める。落とした深さになるよう、直前の行から辿る
+  let newParent = null;
+  const prev = drop.prev;
+  if (prev && drop.depth > 0) {
+    let cand = prev;
+    while (cand && depth(cand) >= drop.depth) cand = byId(cand.parentId);
+    newParent = cand ? cand.id : null;
+    if (depth(prev) + 1 === drop.depth) newParent = prev.id;
+  }
+  // 自分の子孫を親にしてしまわないよう防ぐ
+  if (newParent && movingIds.has(newParent)) { renderAll(); return; }
+
+  const top = moving[0];
+
+  // 何も変わらないなら履歴に積まない（元に戻すが空振りするため）
+  const beforeOrder = tasks.map(t => t.id).join(',');
+  const beforeParent = top.parentId;
+
+  pushUndo();
+  top.parentId = newParent;
+
+  // 並べ替え: いったん取り除いて、落とし先へまとめて入れる
+  tasks = tasks.filter(t => !movingIds.has(t.id));
+  const at = anchor ? tasks.findIndex(t => t.id === anchor.id) : tasks.length;
+  tasks.splice(at < 0 ? tasks.length : at, 0, ...moving);
+
+  if (tasks.map(t => t.id).join(',') === beforeOrder && beforeParent === newParent) {
+    undoStack.pop();          // 位置も親も変わっていない
+    renderAll(); return;
+  }
+
+  // 折りたたまれた親の中へ入れたときは開く（消えたように見えるため）
+  if (newParent) state.collapsed.delete(newParent);
+
+  const i = rows().findIndex(t => t.id === top.id);
+  if (i >= 0) { state.cur.r = state.anc.r = i; }
+  renderAll();
+}
+
+/* ============================================================
    15. 接続の UI（ガントとネットワーク図で共通の部品）
 
    ・ハンドルをクリック → 検索付きの一覧から選ぶ
@@ -1642,8 +1913,8 @@ function startDrag(fromId, dir, ev) {
     if (tgt) tgt.classList.add('droptarget');
   };
   const up = e => {
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', up);
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
     document.querySelectorAll('.droptarget').forEach(n => n.classList.remove('droptarget'));
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const tgt = el && el.closest('[data-bar],[data-node],tr[data-id]');
@@ -1652,8 +1923,8 @@ function startDrag(fromId, dir, ev) {
     if (other && other !== fromId) addDep(dir === 'in' ? other : fromId, dir === 'in' ? fromId : other);
     else if (!d.moved) openConnect(fromId, dir, ev.target);   // 動かさずに離した = クリック扱い
   };
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
 }
 
 /* ============================================================
@@ -1716,7 +1987,7 @@ linkScroll(paneRight,  [paneLeft,  paneRight2], true);
 linkScroll(paneRight2, [paneLeft,  paneRight],  true);
 
 // --- 表のクリック
-document.getElementById('grid').addEventListener('mousedown', e => {
+document.getElementById('grid').addEventListener('pointerdown', e => {
   const caret = e.target.closest('[data-caret]');
   if (caret) {
     const id = caret.dataset.caret;
@@ -1724,10 +1995,18 @@ document.getElementById('grid').addEventListener('mousedown', e => {
     renderAll(); e.preventDefault(); return;
   }
   const rn = e.target.closest('td.rownum');
-  if (rn) {   // 行番号クリック = 行全体を選ぶ
+  if (rn) {   // 行番号 = 行全体を選ぶ / 掴んで動かす
     const r = Number(rn.parentElement.dataset.r);
-    state.cur.r = state.anc.r = r; state.cur.c = 0; state.anc.c = state.cols.length - 1;
-    renderAll(); placeInput(); focusGrid(); e.preventDefault(); return;
+    const inSel = r >= Math.min(state.cur.r, state.anc.r) && r <= Math.max(state.cur.r, state.anc.r);
+    if (!(e.shiftKey && inSel)) {
+      state.cur.r = state.anc.r = r; state.cur.c = 0; state.anc.c = state.cols.length - 1;
+    } else if (e.shiftKey) {
+      state.cur.r = r; state.cur.c = 0; state.anc.c = state.cols.length - 1;
+    }
+    renderAll(); placeInput(); focusGrid();
+    e.preventDefault();
+    startRowDrag(r, e);
+    return;
   }
   const td = e.target.closest('td.cell');
   if (!td) return;
@@ -1772,6 +2051,11 @@ cellInput.addEventListener('keydown', e => {
   if (k === 'Tab')   { e.preventDefault(); moveCur(state.cur.r, state.cur.c + (e.shiftKey ? -1 : 1)); return; }
   if (k === 'Enter') { e.preventDefault(); e.shiftKey ? moveCur(state.cur.r - 1, state.cur.c) : beginEdit(); return; }
   if (k === 'F2')    { e.preventDefault(); beginEdit(); return; }
+  if (k === ' ' && e.shiftKey) {   // Excel と同じ「行全体を選ぶ」
+    e.preventDefault();
+    state.cur.c = 0; state.anc.c = state.cols.length - 1;
+    renderAll(); return;
+  }
   if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearSel(); return; }
   if (k === 'Escape') { closePop(); return; }
   // 半角文字はここで編集を始める。
@@ -1787,7 +2071,7 @@ cellInput.addEventListener('paste', e => {
 
 // --- ガント側のクリックと接続ハンドル
 // ガントの帯。見比べのときは面が 2 つあるので、まとめて受ける
-document.getElementById('split').addEventListener('mousedown', e => {
+document.getElementById('split').addEventListener('pointerdown', e => {
   if (!e.target.closest('.rows')) return;
   const h = e.target.closest('[data-handle]');
   if (h) {
@@ -1804,15 +2088,73 @@ document.getElementById('split').addEventListener('mousedown', e => {
 });
 
 // --- ネットワーク図
-document.querySelector('.net-split').addEventListener('mousedown', e => {
+document.querySelector('.net-split').addEventListener('pointerdown', e => {
+  // ハンドルの上から始めたら「線をつなぐ」、ノード本体から始めたら「動かす」
   const h = e.target.closest('[data-nethandle]');
   if (h) { startDrag(h.dataset.id, h.dataset.nethandle, e); return; }
+
   const g = e.target.closest('[data-node]');
   if (g) {
-    const rs = rows(), i = rs.findIndex(t => t.id === g.dataset.node);
+    const id = g.dataset.node;
+    // 掴むのを先にする。renderAll() で g が DOM から外れ、
+    // あとから ownerSVGElement を取ろうとすると null になる
+    startNodeMove(id, g.ownerSVGElement, e);
+    const rs = rows(), i = rs.findIndex(t => t.id === id);
     if (i >= 0) { state.cur.r = state.anc.r = i; renderAll(); }
+    return;
   }
+  // 何もない場所を掴んだら画面全体を動かす
+  startPan(e);
 });
+
+// --- ノードを掴んで動かす (UI-NET-10)
+function startNodeMove(id, svg, ev) {
+  ev.preventDefault();
+  if (!svg) return;
+  const box = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const scale = box.width / (vb.width || 1);
+  const { pos } = netLayout();
+  const p0 = pos[id];
+  if (!p0) return;
+  const sx = ev.clientX, sy = ev.clientY;
+  let moved = false;
+
+  const move = e => {
+    const dx = (e.clientX - sx) / scale, dy = (e.clientY - sy) / scale;
+    if (!moved && Math.hypot(dx, dy) < 4) return;   // 小さな揺れは選択とみなす
+    moved = true;
+    const snap = v => Math.round(v / NET_GRID) * NET_GRID;   // 格子に吸着させて揃えやすくする
+    state.netPos[id] = { x: Math.max(0, snap(p0.x + dx)), y: Math.max(0, snap(p0.y + dy)) };
+    renderNet();
+  };
+  const up = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+  };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
+// --- 何もない場所を掴んで画面全体を動かす
+function startPan(ev) {
+  const wrap = ev.target.closest('.net-wrap');
+  if (!wrap) return;
+  const sx = ev.clientX, sy = ev.clientY;
+  const l0 = wrap.scrollLeft, t0 = wrap.scrollTop;
+  wrap.classList.add('panning');
+  const move = e => {
+    wrap.scrollLeft = l0 - (e.clientX - sx);
+    wrap.scrollTop  = t0 - (e.clientY - sy);
+  };
+  const up = () => {
+    wrap.classList.remove('panning');
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+  };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
 
 // --- ツールバー
 document.querySelectorAll('[data-zoom]').forEach(b =>
@@ -1848,6 +2190,7 @@ document.querySelectorAll('[data-netzoom]').forEach(b =>
     renderNet();
   });
 document.getElementById('netFit').onclick = () => { state.netScale = 1; renderNet(); };
+document.getElementById('netTidy').onclick = () => { state.netPos = {}; renderNet(); };
 
 // 差分の見せ方の切替（ガントとネットワーク図の両方に同じボタンを置いている）
 document.querySelectorAll('[data-diff]').forEach(b => b.onclick = () => {

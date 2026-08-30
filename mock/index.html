@@ -51,6 +51,7 @@
   --shadow: 0 1px 2px rgba(16,24,40,.05), 0 2px 6px rgba(16,24,40,.07);
   --pop-shadow: 0 4px 14px rgba(16,24,40,.16), 0 1px 3px rgba(16,24,40,.1);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --box-tint: 20, 28, 40;      /* 枠の重ね色（明るいテーマでは暗い方向へ） */
 
   --row-h: 26px;
   --head-h: 40px;
@@ -70,6 +71,7 @@
     --warn-bg:#2f2915; --warn-br:#5f5228;
     --shadow:0 1px 2px rgba(0,0,0,.4);
     --pop-shadow:0 6px 20px rgba(0,0,0,.55);
+    --box-tint: 255, 255, 255;   /* 暗いテーマでは明るい方向へ */
   }
 }
 :root[data-theme="dark"] {
@@ -84,6 +86,7 @@
   --warn-bg:#2f2915; --warn-br:#5f5228;
   --shadow:0 1px 2px rgba(0,0,0,.4);
   --pop-shadow:0 6px 20px rgba(0,0,0,.55);
+  --box-tint: 255, 255, 255;
 }
 
 * { box-sizing: border-box; }
@@ -417,6 +420,26 @@ details.chglist[hidden] { display: none; }
 .net-node.sel rect.box { stroke: var(--accent); stroke-width: 3; }
 /* 手で動かしたノード。「整列」で元に戻ることが分かるように印を付ける */
 .net-node.moved rect.box { filter: drop-shadow(0 2px 3px rgba(0,0,0,.28)); }
+/* 枠 = ガントの親タスク。中に子の図が入る。
+   深いほど内側だと分かるよう、階層で背景の濃さを変える。 */
+.net-box rect.box {
+  /* 階層が深いほど濃く。地の色に対する重ね方で表すので、
+     明るいテーマでも暗いテーマでも「内側ほど濃い」が成立する。
+     単に不透明度を下げると、暗いテーマで枠が地に沈んで見えなくなる。 */
+  fill: rgba(var(--box-tint), calc(0.04 + var(--lv) * 0.045));
+  stroke: var(--border); stroke-width: 1.5;
+}
+.net-box.cc rect.box { stroke: var(--cc); stroke-width: 2; stroke-dasharray: 6 3; }
+.net-box.sel rect.box { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
+.net-box rect.head { fill: var(--head); stroke: none; cursor: grab; }
+.net-box.sel rect.head { fill: var(--accent-bg); }
+.net-box .b-name { font-size: 11.5px; font-weight: 700; fill: var(--text); pointer-events: none; }
+.net-box .b-sub { font-size: 10px; fill: var(--text-faint); pointer-events: none; }
+.b-caret { font-size: 11px; fill: var(--text-dim); cursor: pointer; user-select: none; }
+.b-caret:hover { fill: var(--accent); }
+.net-box.faded { opacity: .35; }
+.net-node.collapsed-group rect.box { stroke-dasharray: 6 3; stroke-width: 2; }
+
 .net-node { cursor: grab; }
 .net-node:active { cursor: grabbing; }
 .net-wrap.panning { cursor: grabbing; }
@@ -699,37 +722,44 @@ let tasks = [
        start:'2026-05-01', finish:'2026-05-01', wbsCode:'1.10', note:'顧客レビュー完了が条件' }),
 
   mk({ id:'T004', name:'実装フェーズ', wbsCode:'2', dept:'開発二課' }),
-  mk({ id:'T005', name:'画面側実装', parentId:'T004', duration:20, start:'2026-05-04', finish:'2026-05-29',
+  // 3 階層目。入れ子の中に入れ子がある形を試せるようにしている
+  mk({ id:'T010', name:'画面側', parentId:'T004', wbsCode:'2.1', dept:'開発二課' }),
+  mk({ id:'T005', name:'画面側実装', parentId:'T010', duration:20, start:'2026-05-04', finish:'2026-05-29',
        assignee:'田中', dept:'開発二課', phase:'実装', priority:'高', estimate:'画面数 12 × 1.5d',
        approver:'課長', location:'本社 5F', equipment:'検証機 PC-08', deliverable:'画面一式',
-       wbsCode:'2.1', customer:'株式会社サンプル' }),
+       wbsCode:'2.1.1', customer:'株式会社サンプル' }),
+  mk({ id:'T011', name:'画面単体試験', parentId:'T010', duration:6, start:'2026-06-01', finish:'2026-06-08',
+       assignee:'田中', dept:'開発二課', phase:'試験', priority:'中', reviewReq:'要',
+       estimate:'画面数 12 × 0.5d', approver:'課長', location:'本社 5F',
+       deliverable:'単体試験成績書', wbsCode:'2.1.2' }),
   mk({ id:'T006', name:'サーバ側実装', parentId:'T004', duration:15, start:'2026-05-04', finish:'2026-05-22',
        assignee:'高橋', dept:'開発二課', phase:'実装', priority:'中', estimate:'API 数 8 × 1.8d',
        approver:'課長', location:'在宅', equipment:'検証サーバ SV-02', deliverable:'サーバ一式',
        wbsCode:'2.2', vendor:'協力会社 B', contractNo:'C-2026-041' }),
 
   mk({ id:'B002', name:'合流バッファ', kind:'buffer', duration:4,
-       start:'2026-05-25', finish:'2026-05-28', consumed:0, protects:'T007', wbsCode:'2.9' }),
+       start:'2026-06-09', finish:'2026-06-12', consumed:0, protects:'T007', wbsCode:'2.9' }),
 
-  mk({ id:'T007', name:'結合試験', duration:10, start:'2026-06-01', finish:'2026-06-12',
+  mk({ id:'T007', name:'結合試験', duration:10, start:'2026-06-15', finish:'2026-06-26',
        assignee:'佐藤', dept:'品質保証課', phase:'試験', priority:'高', reviewReq:'要',
        estimate:'試験項目 320 件', approver:'部長', location:'試験室', equipment:'試験機一式',
        deliverable:'試験成績書', wbsCode:'3', customer:'株式会社サンプル', risk:'環境準備の遅れ' }),
 
   mk({ id:'B001', name:'プロジェクトバッファ', kind:'buffer', duration:10,
-       start:'2026-06-15', finish:'2026-06-26', consumed:3, protects:'M002', wbsCode:'4' }),
+       start:'2026-06-29', finish:'2026-07-10', consumed:3, protects:'M002', wbsCode:'4' }),
   mk({ id:'M002', name:'◆ 納品', kind:'milestone', duration:0,
-       start:'2026-06-26', finish:'2026-06-26', wbsCode:'5', priority:'高', note:'契約上の納期' }),
+       start:'2026-07-10', finish:'2026-07-10', wbsCode:'5', priority:'高', note:'契約上の納期' }),
 ];
 
 let deps = [
   { from:'T002', to:'T003' }, { from:'T003', to:'B003' }, { from:'B003', to:'M001' },
   { from:'M001', to:'T005' }, { from:'M001', to:'T006' },
-  { from:'T005', to:'B002' }, { from:'T006', to:'B002' }, { from:'B002', to:'T007' },
+  { from:'T005', to:'T011' }, { from:'T011', to:'B002' },
+  { from:'T006', to:'B002' }, { from:'B002', to:'T007' },
   { from:'T007', to:'B001' }, { from:'B001', to:'M002' },
 ];
 
-const CRITICAL = new Set(['T002','T003','B003','M001','T005','B002','T007','B001','M002']);
+const CRITICAL = new Set(['T002','T003','B003','M001','T005','T011','B002','T007','B001','M002']);
 const TODAY = '2026-05-11';
 
 // 読み込み時点の状態。差分の計算に使う（UI-DIFF-01）
@@ -1163,82 +1193,19 @@ function drawDeps(n, ds, list, x, cs) {
 }
 
 /* ============================================================
-   9. ネットワーク図
-   接続の UI はガントと同じ考え方（ハンドル＋ポップアップ＋ドラッグ）
+   9. ネットワーク図 — 階層を「入れ子の枠」で表す
+
+   ガントの階層構造と、この図の入れ子は同じものです。
+   大分類のタスクが枠になり、その中に中分類の図が入る。
+   中分類も枠になり、その中に小分類の図が入る。畳めば 1 個のノードに縮む。
+
+   そのため配置計算は再帰になります。枠の大きさは中身から決まるので、
+   「すべてのノードが同じ大きさ」という前提は使えません。
    ============================================================ */
-// ノードの大きさと間隔。名前を 2 行で見せたいので、以前より縦を広げ、
-// 段の間隔は詰めた（横に長すぎて全体が見えなかったため）。
-const NW = 150, NH = 56, GX = 48, GY = 22;
-const NET_GRID = 8;   // 手で動かすときの吸着
-
-function netLayout() {
-  const leaves = tasks.filter(t => !isGroup(t) && (state.showExtras || t.kind === 'task'));
-  const ids = new Set(leaves.map(t => t.id));
-  const ed = deps.filter(d => ids.has(d.from) && ids.has(d.to));
-
-  // --- 段（先行タスクからの最長距離）
-  const layer = {};
-  leaves.forEach(t => layer[t.id] = 0);
-  for (let i = 0; i < leaves.length + 1; i++) {
-    let moved = false;
-    for (const d of ed) if (layer[d.to] < layer[d.from] + 1) { layer[d.to] = layer[d.from] + 1; moved = true; }
-    if (!moved) break;
-  }
-  const byLayer = {};
-  leaves.forEach(t => (byLayer[layer[t.id]] ||= []).push(t));
-  const layerKeys = Object.keys(byLayer).map(Number).sort((a,b) => a-b);
-
-  /* --- 段の中の並べ替え
-     つながっている相手の位置の平均に寄せて並べ替える。これを数回繰り返すと
-     線の交差が大きく減る。以前は元の並び順のまま置いていたため、
-     線が交差しまくって読めなかった。 */
-  const order = {};   // id -> 段の中での位置
-  layerKeys.forEach(L => byLayer[L].forEach((t, i) => order[t.id] = i));
-
-  const meanOf = (id, side) => {
-    const rel = side === 'in' ? ed.filter(d => d.to === id).map(d => d.from)
-                              : ed.filter(d => d.from === id).map(d => d.to);
-    const vals = rel.map(r => order[r]).filter(v => v !== undefined);
-    return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
-  };
-  for (let pass = 0; pass < 4; pass++) {
-    // 前から後ろへ（先行タスクに寄せる）、次に後ろから前へ（後続に寄せる）
-    const seq = pass % 2 === 0 ? layerKeys : [...layerKeys].reverse();
-    const side = pass % 2 === 0 ? 'in' : 'out';
-    seq.forEach(L => {
-      const arr = byLayer[L];
-      const key = new Map(arr.map(t => [t.id, meanOf(t.id, side)]));
-      arr.sort((a, b) => {
-        const ka = key.get(a.id), kb = key.get(b.id);
-        if (ka === null && kb === null) return order[a.id] - order[b.id];
-        if (ka === null) return 1;
-        if (kb === null) return -1;
-        return ka - kb;
-      });
-      arr.forEach((t, i) => order[t.id] = i);
-    });
-  }
-
-  // --- 座標。手で動かしたものはその位置を使う
-  const pos = {};
-  layerKeys.forEach(L => byLayer[L].forEach((t, i) => {
-    const manual = state.netPos[t.id];
-    pos[t.id] = manual
-      ? { x: manual.x, y: manual.y, t, manual: true }
-      : { x: 20 + L * (NW + GX), y: 16 + i * (NH + GY), t };
-  }));
-
-  const xs = Object.values(pos).map(p => p.x), ys = Object.values(pos).map(p => p.y);
-  const baseY = Math.max(...ys, 0) + NH;
-  // 段をまたぐ長い線は下へ迂回させるので、その分の高さを足しておく
-  const longest = ed.reduce((a, d) => Math.max(a, (layer[d.to] ?? 0) - (layer[d.from] ?? 0)), 1);
-  const flyover = longest > 1 ? 26 + longest * 8 : 0;
-  return {
-    pos, ed, layer, baseY,
-    w: Math.max(...xs, 0) + NW + 40,
-    h: baseY + flyover + 30,
-  };
-}
+const NW = 150, NH = 56, GX = 46, GY = 20;
+const NET_PAD = 14;    // 枠の内側の余白
+const NET_HEAD = 24;   // 枠の見出しの高さ
+const NET_GRID = 8;    // 手で動かすときの吸着
 
 const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -1254,28 +1221,279 @@ function wrapName(name, per, maxLines) {
   return out.length ? out : [''];
 }
 
-/* 配置の良し悪しを測る目安（検証で使う）。
-   数えるのは「線がノードの上を通っている数」。
-   線どうしの交差より、こちらのほうが読みにくさに直結する。 */
+const netVisible = t => state.showExtras || t.kind === 'task' || isGroup(t);
+
+/**
+ * ひとつの階層のメンバーを並べる。中に枠があれば再帰する。
+ * 返す座標は「その階層の中での位置」。絶対座標は netLayout() で足し込む。
+ */
+function layoutMembers(parentId, depth) {
+  const members = tasks.filter(t => t.parentId === parentId && netVisible(t));
+  if (!members.length) return { items: [], w: 0, h: 0, bottom: 0 };
+
+  // 各メンバーの大きさ。開いている枠は中身から決まる
+  const items = members.map(t => {
+    const expanded = isGroup(t) && !state.collapsed.has(t.id);
+    if (expanded) {
+      const inner = layoutMembers(t.id, depth + 1);
+      return { t, inner, depth, container: true,
+               w: Math.max(NW, inner.w + NET_PAD * 2),
+               h: inner.h + NET_HEAD + NET_PAD };
+    }
+    return { t, depth, container: false, w: NW, h: NH };
+  });
+
+  /* 段を決める。
+     枠の奥にあるタスク同士の依存は、この階層では「枠と枠の順序」を意味する。
+     そのため依存の両端を、この階層に属する先祖に読み替える。
+     これをしないと枠の中と外で順序が食い違い、線が右から左へ戻る。 */
+  const idset = new Set(members.map(t => t.id));
+  const owner = id => { let c = id, g = 0; while (c && g++ < 60) { if (idset.has(c)) return c; c = (byId(c) || {}).parentId; } return null; };
+  const pairs = [];
+  deps.forEach(d => {
+    const a = owner(d.from), b = owner(d.to);
+    if (a && b && a !== b) pairs.push([a, b]);
+  });
+
+  const layer = {};
+  members.forEach(t => layer[t.id] = 0);
+  for (let k = 0; k < members.length + 1; k++) {
+    let moved = false;
+    pairs.forEach(([a, b]) => { if (layer[b] < layer[a] + 1) { layer[b] = layer[a] + 1; moved = true; } });
+    if (!moved) break;
+  }
+
+  const byLayer = {};
+  items.forEach(it => (byLayer[layer[it.t.id]] ||= []).push(it));
+  const keys = Object.keys(byLayer).map(Number).sort((a, b) => a - b);
+
+  // 段の中を、つながっている相手の位置に寄せて並べ替える（交差を減らす）
+  const order = {};
+  keys.forEach(L => byLayer[L].forEach((it, i) => order[it.t.id] = i));
+  for (let pass = 0; pass < 4; pass++) {
+    const seq = pass % 2 === 0 ? keys : [...keys].reverse();
+    const side = pass % 2;   // 0: 先行に寄せる / 1: 後続に寄せる
+    seq.forEach(L => {
+      const arr = byLayer[L];
+      const key = new Map(arr.map(it => {
+        const vals = pairs.filter(pr => pr[1 - side] === it.t.id)
+                          .map(pr => order[pr[side]]).filter(v => v !== undefined);
+        return [it.t.id, vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null];
+      }));
+      arr.sort((a, b) => {
+        const ka = key.get(a.t.id), kb = key.get(b.t.id);
+        if (ka === null && kb === null) return order[a.t.id] - order[b.t.id];
+        if (ka === null) return 1;
+        if (kb === null) return -1;
+        return ka - kb;
+      });
+      arr.forEach((it, i) => order[it.t.id] = i);
+    });
+  }
+
+  // 座標。段ごとに左から右へ、段の中は上から下へ
+  let x = 0;
+  keys.forEach(L => {
+    const arr = byLayer[L];
+    const colW = Math.max(...arr.map(it => it.w));
+    let y = 0;
+    arr.forEach(it => {
+      it.x = x + (colW - it.w) / 2;
+      it.y = y;
+      it.layer = L;
+      // 手で動かしたぶんは「枠の中でのずれ」として持つ。
+      // 絶対位置にすると、親の枠が動いたとき中身が置き去りになる。
+      const off = state.netPos[it.t.id];
+      if (off) { it.x += off.dx; it.y += off.dy; it.manual = true; }
+      y += it.h + GY;
+    });
+    x += colW + GX;
+  });
+
+  const w = Math.max(0, ...items.map(it => it.x + it.w));
+  const h = Math.max(0, ...items.map(it => it.y + it.h));
+  return { items, w, h, layer };
+}
+
+// 全体を絶対座標に展開する
+function netLayout() {
+  const root = layoutMembers(null, 0);
+  const boxes = [], pos = {}, bottomOf = {};
+
+  (function flatten(node, ox, oy, parentId) {
+    let bottom = 0;
+    node.items.forEach(it => {
+      const bx = ox + it.x, by = oy + it.y;
+      const b = { id: it.t.id, t: it.t, x: bx, y: by, w: it.w, h: it.h,
+                  container: it.container, depth: it.depth, manual: !!it.manual,
+                  layer: it.layer, parentId };
+      boxes.push(b); pos[it.t.id] = b;
+      bottom = Math.max(bottom, by + it.h);
+      if (it.container) flatten(it.inner, bx + NET_PAD, by + NET_HEAD, it.t.id);
+    });
+    bottomOf[parentId ?? '@root'] = bottom;
+  })(root, 20, 18, null);
+
+  return { boxes, pos, bottomOf, w: 20 + root.w + 40, h: 18 + root.h + 44 };
+}
+
+/* 描く線を決める。
+   ・両端が見えている        → そのノード同士を結ぶ（枠をまたいでよい）
+   ・片方が畳まれた枠の中     → その枠の縁に付ける
+   ・畳まれた枠の中で完結する → 描かない（中が見えないため）
+
+   枠の縁でまとめてしまうと、どのタスクからどのタスクへの依存か
+   分からなくなる。見えているものは、見えているまま結ぶ。 */
+function netEdges(pos) {
+  const rep = id => {
+    if (pos[id]) return id;
+    let c = (byId(id) || {}).parentId;
+    while (c) { if (pos[c]) return c; c = (byId(c) || {}).parentId; }
+    return null;
+  };
+  const seen = new Set(), out = [];
+  deps.forEach(d => {
+    const a = rep(d.from), b = rep(d.to);
+    if (!a || !b || a === b) return;
+    const k = a + '→' + b;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ from: a, to: b, srcFrom: d.from, srcTo: d.to });
+  });
+  return out;
+}
+
+// 線がノードの上を通っている数。配置の良し悪しを測る目安（検証で使う）
 function netEdgesOverNodes() {
-  const { pos, ed, layer } = netLayout();
+  const { pos, bottomOf } = netLayout();
+  const ed = netEdges(pos);
   let n = 0;
   ed.forEach(d => {
     const a = pos[d.from], b = pos[d.to];
     if (!a || !b) return;
-    const span = (layer[d.to] ?? 0) - (layer[d.from] ?? 0);
-    if (span > 1 && !a.manual && !b.manual) return;   // 下へ迂回するので重ならない
-    const x1 = a.x + NW, y1 = a.y + NH/2, x2 = b.x, y2 = b.y + NH/2;
-    Object.entries(pos).forEach(([id, q]) => {
-      if (id === d.from || id === d.to) return;
-      // 線分がノードの四角と交わるか（端点を少しずつ進めて判定）
-      for (let s = 0; s <= 1; s += 0.02) {
-        const x = x1 + (x2 - x1) * s, y = y1 + (y2 - y1) * s;
-        if (x > q.x && x < q.x + NW && y > q.y && y < q.y + NH) { n++; return; }
+    const { pts, dip } = edgePoints(a, b, pos, bottomOf);
+    if (dip) return;   // 下へ迂回するので重ならない
+    for (const q of Object.values(pos)) {
+      if (q.id === d.from || q.id === d.to) continue;
+      if (q.container) continue;            // 枠の中は通ってよい
+      let hit = false;
+      for (let i = 1; i < pts.length && !hit; i++) {
+        const [px,py] = pts[i-1], [cx,cy] = pts[i];
+        for (let t = 0; t <= 1; t += 0.02) {
+          const x = px + (cx - px) * t, y = py + (cy - py) * t;
+          if (x > q.x + 1 && x < q.x + q.w - 1 && y > q.y + 1 && y < q.y + q.h - 1) { hit = true; break; }
+        }
       }
-    });
+      if (hit) n++;
+    }
   });
   return n;
+}
+
+// 段を 2 つ以上またぐ線は、途中のノードの上を突っ切るので下へ迂回させる。
+// 同じ枠の中にいるときだけ（枠をまたぐ線は迂回させると枠を突き抜けるため）
+function edgeDips(a, b, bottomOf) {
+  if (a.parentId !== b.parentId) return false;
+  if (a.manual || b.manual) return false;
+  return (b.layer - a.layer) > 1;
+}
+
+// 2 つのタスクの共通の祖先
+function commonAncestor(idA, idB) {
+  const chain = id => { const out = []; let c = (byId(id) || {}).parentId; while (c) { out.push(c); c = (byId(c) || {}).parentId; } return out; };
+  const a = chain(idA), b = new Set(chain(idB));
+  return a.find(x => b.has(x)) ?? null;
+}
+
+// 共通の祖先の直下にある、その側の枠（なければ本人）
+function levelBox(node, common, pos) {
+  let cur = node.id, guard = 0;
+  while (cur && guard++ < 60) {
+    const par = (byId(cur) || {}).parentId ?? null;
+    if (par === common) break;
+    cur = par;
+  }
+  return (cur && pos[cur]) || node;
+}
+
+// 線分がノードの上を通るか
+function segHits(px, py, cx, cy, pos, skip) {
+  for (const q of Object.values(pos)) {
+    if (skip.has(q.id) || q.container) continue;
+    for (let t = 0; t <= 1; t += 0.02) {
+      const x = px + (cx - px) * t, y = py + (cy - py) * t;
+      if (x > q.x + 1 && x < q.x + q.w - 1 && y > q.y + 1 && y < q.y + q.h - 1) return true;
+    }
+  }
+  return false;
+}
+
+/* 線の経路（折れ線）を決める。
+
+   枠をまたぐ線は、枠の縁を経由させる。直線で結ぶと枠の中身の上を
+   横切ってしまい、どのノードとどのノードの関係なのか読めなくなる。
+
+   さらに、枠から出るときに「同じ枠の中の後ろのタスク」の上を通ることがある。
+   その場合は枠の底に沿って回り込ませる。
+
+   描画も計測も同じ経路を使う。別々に持つと、直したつもりで
+   計測だけ良くなる、ということが起きる。 */
+function edgePoints(a, b, pos, bottomOf) {
+  const y1 = a.y + a.h / 2, y2 = b.y + b.h / 2;
+  const x1 = a.x + a.w, x2 = b.x - 7;
+  const skip = new Set([a.id, b.id]);
+
+  // 同じ枠の中で段を 2 つ以上またぐ線は、下へ迂回させる
+  if (edgeDips(a, b, bottomOf)) {
+    const dip = (bottomOf[a.parentId ?? '@root'] || Math.max(a.y + a.h, b.y + b.h)) + 12 + (b.layer - a.layer) * 6;
+    return { pts: [[x1, y1], [x1 + 20, dip], [x2 - 20, dip], [x2, y2]], dip: true };
+  }
+
+  const common = commonAncestor(a.id, b.id);
+  const ea = levelBox(a, common, pos), eb = levelBox(b, common, pos);
+  const pts = [[x1, y1]];
+
+  if (ea !== a) {
+    // 枠から出る。まっすぐ右へ抜けると後ろのタスクの上を通ることがある
+    const edgeX = ea.x + ea.w;
+    if (segHits(x1, y1, edgeX, y1, pos, skip)) {
+      const floor = ea.y + ea.h - 7;      // 枠の底に沿って回り込む
+      pts.push([x1 + 12, floor], [edgeX, floor]);
+    } else {
+      pts.push([edgeX, y1]);
+    }
+  }
+  if (eb !== b) {
+    // 枠へ入る。同じ理由で、必要なら枠の底から回り込む
+    const edgeX = eb.x;
+    if (segHits(edgeX, y2, x2, y2, pos, skip)) {
+      const floor = eb.y + eb.h - 7;
+      pts.push([edgeX, floor], [x2 - 12, floor]);
+    } else {
+      pts.push([edgeX, y2]);
+    }
+  }
+  pts.push([x2, y2]);
+
+  // 経由点が左へ戻るなら、素直に直接つなぐ（無理に回すと余計に読めない）
+  for (let k = 1; k < pts.length; k++) if (pts[k][0] < pts[k-1][0] - 1) return { pts: [[x1, y1], [x2, y2]], direct: true };
+  return { pts };
+}
+
+function edgePath(a, b, pos, bottomOf) {
+  const { pts, dip, direct } = edgePoints(a, b, pos, bottomOf);
+  if (direct) {
+    const mx = (pts[0][0] + pts[1][0]) / 2;
+    return `M${pts[0][0]},${pts[0][1]} C${mx},${pts[0][1]} ${mx},${pts[1][1]} ${pts[1][0]},${pts[1][1]}`;
+  }
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [px, py] = pts[i-1], [cx, cy] = pts[i];
+    const k = dip ? Math.min(30, Math.abs(cx - px) / 2 + 8)
+                  : Math.min(34, Math.max(8, (cx - px) / 2));
+    d += ` C${px+k},${py} ${cx-k},${cy} ${cx},${cy}`;
+  }
+  return d;
 }
 
 function renderNet() {
@@ -1287,7 +1505,8 @@ function renderNet() {
 }
 
 function drawNet(n, ds, cs, isBefore) {
-  const { pos, ed, layer, baseY, w, h } = withData(ds, netLayout);
+  const { boxes, pos, bottomOf, w, h } = withData(ds, netLayout);
+  const ed = withData(ds, () => netEdges(pos));
   const svg = document.getElementById('net' + n);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.setAttribute('width', Math.round(w * state.netScale));
@@ -1300,62 +1519,82 @@ function drawNet(n, ds, cs, isBefore) {
     related.add(curId);
     ed.forEach(d => { if (d.from === curId) related.add(d.to); if (d.to === curId) related.add(d.from); });
   }
+  // クリティカルチェーンが中を通る枠は、枠も強調する
+  const ccBox = id => CRITICAL.has(id) ||
+    (pos[id] && pos[id].container && withData(ds, () => descendants(id).some(x => CRITICAL.has(x.id))));
 
-  const edges = ed.map(d => {
+  // --- 枠（浅い順に描く。後から描いたものが前面に来るため中身が上になる）
+  const containers = boxes.filter(b => b.container).sort((a, b) => a.depth - b.depth);
+  const containersSvg = containers.map(b => {
+    const cls = ['net-box'];
+    if (ccBox(b.id)) cls.push('cc');
+    if (b.id === curId) cls.push('sel');
+    if (cs && !cs.ids.has(b.id)) cls.push('faded');
+    const kids = withData(ds, () => childrenOf(b.id).length);
+    const nm = b.name || b.t.name;
+    return `<g class="${cls.join(' ')}" data-node="${b.id}" data-container="1" transform="translate(${b.x},${b.y})">
+      <rect class="box" width="${b.w}" height="${b.h}" rx="8" style="--lv:${b.depth}"/>
+      <rect class="head" width="${b.w}" height="${NET_HEAD}" rx="8" data-boxhead="${b.id}"/>
+      <text class="b-caret" data-caret="${b.id}" x="12" y="${NET_HEAD - 7}">▾</text>
+      <text class="b-name" x="26" y="${NET_HEAD - 7}">${esc(nm)}</text>
+      <text class="b-sub" x="${b.w - 8}" y="${NET_HEAD - 7}" text-anchor="end">${kids} 件</text>
+    </g>`;
+  }).join('');
+
+  // --- 線
+  const edgesSvg = ed.map(d => {
     const a = pos[d.from], b = pos[d.to];
     if (!a || !b) return '';
-    const x1 = a.x + NW, y1 = a.y + NH/2, x2 = b.x, y2 = b.y + NH/2, mx = (x1 + x2)/2;
-    const on = CRITICAL.has(d.from) && CRITICAL.has(d.to);
+    const on = ccBox(d.from) && ccBox(d.to);
     let dim = curId && !(related.has(d.from) && related.has(d.to)) ? ' dim' : '';
-    if (cs && !cs.deps.has(d.from + '→' + d.to)) dim = ' dim';
-
-    /* 段をまたぐ長い線は、途中のノードの上を突っ切ってしまい読めなくなる。
-       下へ迂回させると、どのノードとも重ならず経路も追える。 */
-    const span = (layer[d.to] ?? 0) - (layer[d.from] ?? 0);
-    let path;
-    if (span > 1 && !a.manual && !b.manual) {
-      const dip = baseY + 14 + span * 8;
-      path = `M${x1},${y1} C${x1+34},${y1} ${x1+24},${dip} ${mx},${dip} C${x2-24},${dip} ${x2-34},${y2} ${x2-7},${y2}`;
-    } else {
-      path = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2-7},${y2}`;
-    }
-    return `<path class="net-edge${on?' cc':''}${dim}" d="${path}" marker-end="url(#${on?'arrCC':'arr'})"/>`;
+    if (cs && !cs.deps.has(d.srcFrom + '→' + d.srcTo)) dim = ' dim';
+    const path = edgePath(a, b, pos, bottomOf);
+    return `<path class="net-edge${on ? ' cc' : ''}${dim}" d="${path}" marker-end="url(#${on ? 'arrCC' : 'arr'})"/>`;
   }).join('');
 
-  // 選択中のノードと手で動かしたノードは最後に描く。
-  // SVG は後に書いたものが前面に来るため、これで他のノードの裏に隠れなくなる。
-  const entries = Object.entries(pos).sort((a, b) => {
-    const rank = ([id, q]) => (id === curId ? 2 : q.manual ? 1 : 0);
+  // --- 葉のノード（選択中と手で動かしたものを最後に描いて前面に）
+  const leaves = boxes.filter(b => !b.container).sort((a, b) => {
+    const rank = q => (q.id === curId ? 2 : q.manual ? 1 : 0);
     return rank(a) - rank(b);
   });
-  const nodes = entries.map(([id, p]) => {
-    const t = p.t, cls = ['net-node', t.kind];
-    if (CRITICAL.has(id)) cls.push('cc');
-    if (id === curId) cls.push('sel');
-    if (cs && !cs.ids.has(id)) cls.push('faded');
-    if (p.manual) cls.push('moved');
+  const leavesSvg = leaves.map(b => {
+    const t = b.t, cls = ['net-node', t.kind];
+    if (CRITICAL.has(b.id)) cls.push('cc');
+    if (b.id === curId) cls.push('sel');
+    if (cs && !cs.ids.has(b.id)) cls.push('faded');
+    if (b.manual) cls.push('moved');
+    if (isGroup(t)) cls.push('collapsed-group');
     const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
+              : isGroup(t) ? `${withData(ds, () => descendants(t.id).length)} 件（畳んでいます）`
               : `${t.duration}d ・ ${t.assignee || '—'}`;
-    // 名前は 2 行まで折り返す。1 行に詰めて「…」で切ると何のタスクか分からない
-    const lines = wrapName(t.name, 11, 2);
+    const caret = isGroup(t)
+      ? `<text class="b-caret" data-caret="${b.id}" x="11" y="20">▸</text>` : '';
+    const lines = wrapName(t.name, isGroup(t) ? 10 : 11, 2);
     const nameSvg = lines.map((ln, li) =>
-      `<text class="n-name" x="11" y="${19 + li * 14}">${esc(ln)}</text>`).join('');
-    const handles = (id === curId && !isBefore) ? `
-      <circle class="net-handle" data-nethandle="in"  data-id="${id}" cx="0"  cy="${NH/2}" r="6"/>
-      <circle class="net-handle" data-nethandle="out" data-id="${id}" cx="${NW}" cy="${NH/2}" r="6"/>` : '';
-    return `<g class="${cls.join(' ')}" data-node="${id}" transform="translate(${p.x},${p.y})">
-      <rect class="box" width="${NW}" height="${NH}" rx="6"/>
-      ${nameSvg}
-      <text class="n-sub"  x="11" y="${NH - 10}">${esc(sub)}</text>${handles}</g>`;
+      `<text class="n-name" x="${isGroup(t) ? 25 : 11}" y="${19 + li * 14}">${esc(ln)}</text>`).join('');
+    const handles = (b.id === curId && !isBefore) ? `
+      <circle class="net-handle" data-nethandle="in"  data-id="${b.id}" cx="0" cy="${b.h/2}" r="6"/>
+      <circle class="net-handle" data-nethandle="out" data-id="${b.id}" cx="${b.w}" cy="${b.h/2}" r="6"/>` : '';
+    return `<g class="${cls.join(' ')}" data-node="${b.id}" transform="translate(${b.x},${b.y})">
+      <rect class="box" width="${b.w}" height="${b.h}" rx="6"/>
+      ${caret}${nameSvg}
+      <text class="n-sub" x="11" y="${b.h - 10}">${esc(sub)}</text>${handles}</g>`;
   }).join('');
+
+  // 開いている枠にも接続ハンドルを出す（枠 = 親タスクそのものなので繋げられる）
+  const selBox = curId && pos[curId] && pos[curId].container && !isBefore ? pos[curId] : null;
+  const boxHandles = selBox ? `<g transform="translate(${selBox.x},${selBox.y})">
+      <circle class="net-handle" data-nethandle="in"  data-id="${curId}" cx="0" cy="${selBox.h/2}" r="6"/>
+      <circle class="net-handle" data-nethandle="out" data-id="${curId}" cx="${selBox.w}" cy="${selBox.h/2}" r="6"/>
+    </g>` : '';
 
   svg.innerHTML = `<defs>
     <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
       <path d="M0,0 L7,3 L0,6 z" fill="var(--text-faint)"/></marker>
     <marker id="arrCC" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
       <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--cc)"/></marker>
-    </defs>${edges}${nodes}`;
+    </defs>${containersSvg}${edgesSvg}${leavesSvg}${boxHandles}`;
 }
 
 /* ============================================================
@@ -1770,9 +2009,13 @@ function startRowDrag(startRow, ev) {
 
 function applyRowDrop(moving, drop) {
   const rs = rows();
-  const anchor = rs[drop.idx] || null;           // ここの直前に入れる
   const movingIds = new Set(moving.map(t => t.id));
-  if (anchor && movingIds.has(anchor.id)) { renderAll(); return; }
+
+  // 落とし先が動かしている行そのものなら、その塊の次の行を目印にする。
+  // ここで打ち切ってしまうと「真横にずらして階層だけ変える」ができない。
+  let ai = drop.idx;
+  while (ai < rs.length && movingIds.has(rs[ai].id)) ai++;
+  const anchor = rs[ai] || null;           // ここの直前に入れる
 
   // 新しい親を決める。落とした深さになるよう、直前の行から辿る
   let newParent = null;
@@ -2089,17 +2332,37 @@ document.getElementById('split').addEventListener('pointerdown', e => {
 
 // --- ネットワーク図
 document.querySelector('.net-split').addEventListener('pointerdown', e => {
-  // ハンドルの上から始めたら「線をつなぐ」、ノード本体から始めたら「動かす」
+  // 畳む・開く。ガントの折りたたみと同じ状態を使う (UI-NET-13)
+  const caret = e.target.closest('[data-caret]');
+  if (caret) {
+    e.preventDefault();
+    const id = caret.dataset.caret;
+    state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id);
+    renderAll();
+    return;
+  }
+
+  // ハンドルの上から始めたら「線をつなぐ」、そうでなければ「動かす」
   const h = e.target.closest('[data-nethandle]');
   if (h) { startDrag(h.dataset.id, h.dataset.nethandle, e); return; }
 
+  // 枠は見出しを掴んだときだけ動かす。
+  // 枠の中身の余白を掴んで枠ごと動くと、中のノードを狙えなくなる。
+  const head = e.target.closest('[data-boxhead]');
   const g = e.target.closest('[data-node]');
-  if (g) {
-    const id = g.dataset.node;
-    // 掴むのを先にする。renderAll() で g が DOM から外れ、
+  const grabbable = head ? head.closest('[data-node]') : (g && !g.dataset.container ? g : null);
+
+  if (grabbable) {
+    const id = grabbable.dataset.node;
+    // 掴むのを先にする。renderAll() で要素が DOM から外れ、
     // あとから ownerSVGElement を取ろうとすると null になる
-    startNodeMove(id, g.ownerSVGElement, e);
+    startNodeMove(id, grabbable.ownerSVGElement, e);
     const rs = rows(), i = rs.findIndex(t => t.id === id);
+    if (i >= 0) { state.cur.r = state.anc.r = i; renderAll(); }
+    return;
+  }
+  if (g) {   // 枠の中身の余白 = その枠を選ぶだけ
+    const rs = rows(), i = rs.findIndex(t => t.id === g.dataset.node);
     if (i >= 0) { state.cur.r = state.anc.r = i; renderAll(); }
     return;
   }
@@ -2114,9 +2377,7 @@ function startNodeMove(id, svg, ev) {
   const box = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const scale = box.width / (vb.width || 1);
-  const { pos } = netLayout();
-  const p0 = pos[id];
-  if (!p0) return;
+  const base = state.netPos[id] || { dx: 0, dy: 0 };
   const sx = ev.clientX, sy = ev.clientY;
   let moved = false;
 
@@ -2125,7 +2386,9 @@ function startNodeMove(id, svg, ev) {
     if (!moved && Math.hypot(dx, dy) < 4) return;   // 小さな揺れは選択とみなす
     moved = true;
     const snap = v => Math.round(v / NET_GRID) * NET_GRID;   // 格子に吸着させて揃えやすくする
-    state.netPos[id] = { x: Math.max(0, snap(p0.x + dx)), y: Math.max(0, snap(p0.y + dy)) };
+    // 絶対位置ではなく「枠の中でのずれ」として持つ。
+    // 絶対位置にすると、親の枠が動いたとき中身が置き去りになる。
+    state.netPos[id] = { dx: snap(base.dx + dx), dy: snap(base.dy + dy) };
     renderNet();
   };
   const up = () => {

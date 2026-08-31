@@ -336,6 +336,41 @@ select.celledit { position: absolute; font: inherit; font-size: 12px; z-index: 2
 .deplayer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .droptarget { outline: 2px dashed var(--accent); outline-offset: 1px; }
 
+/* --- 複数プロジェクト --------------------------------------
+
+   プロジェクトは「左端の色帯」で示します。
+
+   帯や枠の色は、すでにクリティカルチェーンと種別が使っています。
+   そこへプロジェクトの色を重ねると、同じ場所が 2 つの意味を持ち、
+   どちらの話なのか読み取れなくなります。だから場所を分けます。 */
+table.grid td.rownum { box-shadow: inset 3px 0 0 var(--proj, transparent); }
+.grow { box-shadow: inset 3px 0 0 var(--proj, transparent); }
+
+/* まとめ行（プロジェクト名・担当者名）。
+   実データではない作り物の行なので、タスクの行と見分けが付くようにする。 */
+table.grid tr.headrow td,
+table.grid tr.headrow td.cell,
+table.grid tr.headrow td.cell.ro { background: var(--head); color: var(--text); font-weight: 700; cursor: default; }
+table.grid tr.headrow .hsub { color: var(--text-faint); font-weight: 400; font-size: 11px; margin-left: 6px; }
+.grow.headrow { background: var(--head); }
+/* まとめ行のガント側。期間の範囲だけを出す。
+   「何 % 埋まっている」は工数が確認できていないので出さない (Q-034)。 */
+.headspan { position: absolute; top: 11px; height: 4px; border-radius: 2px; background: var(--text-faint); opacity: .55; }
+.headspan::before, .headspan::after {
+  content: ''; position: absolute; top: -4px; width: 2px; height: 12px; background: var(--text-faint);
+}
+.headspan::before { left: 0; }
+.headspan::after  { right: 0; }
+
+/* プロジェクトの凡例と絞り込み */
+.proj-chip { display: inline-flex; align-items: center; gap: 5px; }
+.proj-chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.proj-chip.off { opacity: .4; text-decoration: line-through; }
+
+/* ネットワーク図では、プロジェクトが最上位の枠になる */
+.net-box.proj rect.box  { stroke: var(--proj, var(--border)); stroke-width: 2; }
+.net-box.proj rect.head { fill: var(--proj); fill-opacity: .18; }
+
 /* --- 差分の見せ方 ------------------------------------------
    「変更がないもの」を薄くする。
 
@@ -589,6 +624,11 @@ kbd {
     <button data-zoom="week">週</button>
     <button data-zoom="month">月</button>
     <span class="tb-sep"></span>
+    <span class="hint">並べ方</span>
+    <button data-groupby="project" title="プロジェクトごとに、いつもの階層で並べます">プロジェクト別</button>
+    <button data-groupby="person" title="担当者ごとに、その人の全プロジェクトの作業を日程順に並べます">担当者別</button>
+    <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
+    <span class="tb-sep"></span>
     <span class="hint">比率</span>
     <button data-ratio="0.72" title="表を広く">表</button>
     <button data-ratio="0.5" title="半々">半々</button>
@@ -608,7 +648,7 @@ kbd {
     <span class="tb-sep"></span>
     <label><input type="checkbox" id="allDeps"> 依存を全部表示</label>
     <span class="spacer"></span>
-    <span class="hint">セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層 / 行番号をダブルクリックで全項目</span>
+    <span class="hint" id="ganttHint"></span>
   </div>
 
   <div class="card">
@@ -645,13 +685,14 @@ kbd {
     <span><i class="swatch" style="background:var(--buffer-bg);border:1px solid var(--buffer)"></i> バッファ</span>
     <span><i class="swatch" style="background:var(--ms);transform:rotate(45deg);width:9px;height:9px"></i> マイルストン</span>
     <span><i class="swatch" style="background:var(--readonly);border:1px solid var(--border)"></i> 親行（子から決まるため編集不可）</span>
+    <span class="proj-legend"></span>
   </div>
 
   <details class="chglist" id="chgGantt"></details>
   <div class="detail" id="detailGantt"></div>
 
   <p class="spec-ref">
-    仕様: <code>docs/ui/11-gantt.md</code> — 操作 <code>UI-GANTT-*</code>。
+    仕様: <code>docs/ui/11-gantt.md</code> / <code>docs/ui/15-multi-project.md</code> — 操作 <code>UI-GANTT-*</code>。
     日程の再計算はサーバ側に任せる想定のため、期間を変えても<strong>後続タスクは動きません</strong>（自分の帯だけ伸びます）
   </p>
 </section>
@@ -661,6 +702,7 @@ kbd {
   <div class="toolbar">
     <button id="netFit">全体表示</button>
     <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
+    <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
     <span class="tb-sep"></span>
     <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
     <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
@@ -697,13 +739,14 @@ kbd {
     <span><i class="swatch" style="background:var(--normal-bg);border:1px solid var(--normal)"></i> 通常タスク</span>
     <span><i class="swatch" style="background:var(--buffer-bg);border:1px dashed var(--buffer)"></i> バッファ</span>
     <span><i class="swatch" style="background:var(--ms-bg);border:2px solid var(--ms)"></i> マイルストン</span>
+    <span class="proj-legend"></span>
   </div>
 
   <details class="chglist" id="chgNet"></details>
   <div class="detail" id="detailNet"></div>
 
   <p class="spec-ref">
-    仕様: <code>docs/ui/12-network.md</code> — 接続 UI はガントと共通の部品。
+    仕様: <code>docs/ui/12-network.md</code> / <code>docs/ui/15-multi-project.md</code> — 接続 UI はガントと共通の部品。
     図法（ノード＝タスク）は未確定 <code>Q-021</code>
   </p>
 </section>
@@ -729,6 +772,22 @@ kbd {
             読んだまま持ち回って保存時にそのまま書き戻します。
             何個増えても I/F 仕様は増えません。
    ============================================================ */
+/* ────────────────────────────────────────────────────────────
+   プロジェクトの一覧
+
+   ⚠️ 実物の持ち方は未確認です (Q-035)。
+      画面側は「タスクがどのプロジェクトのものかを表す識別子がある」
+      ことだけを前提にしています。ファイルが 1 つなのか複数なのかは
+      画面側の関心事ではありません。
+   ──────────────────────────────────────────────────────────── */
+const PROJECTS = [
+  { id:'P1', name:'受注管理システム更改', color:'#4a7fd0' },
+  { id:'P2', name:'物流センター自動化',   color:'#c07a2c' },
+  { id:'P3', name:'保守基盤の移行',       color:'#3f9270' },
+];
+const PROJ = Object.fromEntries(PROJECTS.map(p => [p.id, p]));
+const projName = id => (PROJ[id] || {}).name || '';
+
 /* ────────────────────────────────────────────────────────────
    ★ 項目定義 — ここだけ直せば、画面が全部追従します
 
@@ -770,9 +829,13 @@ const FIELDS = [
   { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%' },
   { key:'parent',  label:'親タスク',   grp:'core', section:'基本', type:'parent', w:150,
     help:'このタスクが属する大分類。「最上位」を選ぶと親から出ます' },
+  { key:'project', label:'プロジェクト', grp:'core', section:'基本', type:'select', w:150,
+    options: PROJECTS.map(p => p.name),
+    help:'色分けと絞り込みに使うため、ツールが意味を理解します。親を変えると親のプロジェクトに揃います' },
+  { key:'assignees', label:'担当',      grp:'core', section:'体制', type:'people', w:110,
+    help:'1 つのタスクに複数人。読点で区切って並べます。担当者別の並べ方はこの項目を見ています' },
 
   // ---- 素通し項目（ツールは意味を解釈せず、そのまま保存する） ----
-  { key:'assignee',  label:'担当',       grp:'pass', section:'体制', type:'text',   w:76 },
   { key:'dept',      label:'部署',       grp:'pass', section:'体制', type:'text',   w:96 },
   { key:'approver',  label:'承認者',     grp:'pass', section:'体制', type:'text',   w:76 },
   { key:'location',  label:'作業場所',   grp:'pass', section:'体制', type:'text',   w:96 },
@@ -818,8 +881,8 @@ const KIND_OF = Object.fromEntries(Object.entries(KIND_LABEL).map(([k,v]) => [v,
    ============================================================ */
 function mk(o) {
   return Object.assign({
-    kind:'task', parentId:null, duration:0, start:'', finish:'', progress:0,
-    assignee:'', dept:'', phase:'', priority:'中', reviewReq:'不要', estimate:'',
+    kind:'task', parentId:null, projectId:'P1', duration:0, start:'', finish:'', progress:0,
+    assignees:[], dept:'', phase:'', priority:'中', reviewReq:'不要', estimate:'',
     approver:'', location:'', equipment:'', costCode:'', vendor:'', contractNo:'',
     customer:'', deliverable:'', risk:'', version:'1.0', wbsCode:'',
     createdAt:'2026-03-02', updatedAt:'2026-03-30', tags:'', note:'',
@@ -828,13 +891,14 @@ function mk(o) {
 }
 
 let tasks = [
+  // ── P1 受注管理システム更改 ─────────────────────────────
   mk({ id:'T001', name:'設計フェーズ', wbsCode:'1', dept:'開発一課' }),
   mk({ id:'T002', name:'要件定義', parentId:'T001', duration:8, start:'2026-04-01', finish:'2026-04-10',
-       progress:100, assignee:'佐藤', dept:'開発一課', phase:'要件', priority:'高', reviewReq:'要',
+       progress:100, assignees:['佐藤'], dept:'開発一課', phase:'要件', priority:'高', reviewReq:'要',
        estimate:'過去実績 A-12', approver:'部長', location:'本社 3F', deliverable:'要件定義書',
        wbsCode:'1.1', customer:'株式会社サンプル', tags:'重要' }),
   mk({ id:'T003', name:'基本設計', parentId:'T001', duration:12, start:'2026-04-13', finish:'2026-04-28',
-       progress:60, assignee:'鈴木', dept:'開発一課', phase:'設計', priority:'高', reviewReq:'要',
+       progress:60, assignees:['鈴木','山本'], dept:'開発一課', phase:'設計', priority:'高', reviewReq:'要',
        estimate:'類似案件比', approver:'課長', location:'本社 3F', deliverable:'基本設計書',
        wbsCode:'1.2', customer:'株式会社サンプル', risk:'仕様変更の可能性' }),
 
@@ -847,15 +911,15 @@ let tasks = [
   // 3 階層目。入れ子の中に入れ子がある形を試せるようにしている
   mk({ id:'T010', name:'画面側', parentId:'T004', wbsCode:'2.1', dept:'開発二課' }),
   mk({ id:'T005', name:'画面側実装', parentId:'T010', duration:20, start:'2026-05-04', finish:'2026-05-29',
-       assignee:'田中', dept:'開発二課', phase:'実装', priority:'高', estimate:'画面数 12 × 1.5d',
+       assignees:['田中'], dept:'開発二課', phase:'実装', priority:'高', estimate:'画面数 12 × 1.5d',
        approver:'課長', location:'本社 5F', equipment:'検証機 PC-08', deliverable:'画面一式',
        wbsCode:'2.1.1', customer:'株式会社サンプル' }),
   mk({ id:'T011', name:'画面単体試験', parentId:'T010', duration:6, start:'2026-06-01', finish:'2026-06-08',
-       assignee:'田中', dept:'開発二課', phase:'試験', priority:'中', reviewReq:'要',
+       assignees:['田中'], dept:'開発二課', phase:'試験', priority:'中', reviewReq:'要',
        estimate:'画面数 12 × 0.5d', approver:'課長', location:'本社 5F',
        deliverable:'単体試験成績書', wbsCode:'2.1.2' }),
   mk({ id:'T006', name:'サーバ側実装', parentId:'T004', duration:15, start:'2026-05-04', finish:'2026-05-22',
-       assignee:'高橋', dept:'開発二課', phase:'実装', priority:'中', estimate:'API 数 8 × 1.8d',
+       assignees:['高橋'], dept:'開発二課', phase:'実装', priority:'中', estimate:'API 数 8 × 1.8d',
        approver:'課長', location:'在宅', equipment:'検証サーバ SV-02', deliverable:'サーバ一式',
        wbsCode:'2.2', vendor:'協力会社 B', contractNo:'C-2026-041' }),
 
@@ -863,7 +927,7 @@ let tasks = [
        start:'2026-06-09', finish:'2026-06-12', consumed:0, protects:'T007', wbsCode:'2.9' }),
 
   mk({ id:'T007', name:'結合試験', duration:10, start:'2026-06-15', finish:'2026-06-26',
-       assignee:'佐藤', dept:'品質保証課', phase:'試験', priority:'高', reviewReq:'要',
+       assignees:['佐藤','鈴木'], dept:'品質保証課', phase:'試験', priority:'高', reviewReq:'要',
        estimate:'試験項目 320 件', approver:'部長', location:'試験室', equipment:'試験機一式',
        deliverable:'試験成績書', wbsCode:'3', customer:'株式会社サンプル', risk:'環境準備の遅れ' }),
 
@@ -871,6 +935,55 @@ let tasks = [
        start:'2026-06-29', finish:'2026-07-10', consumed:3, protects:'M002', wbsCode:'4' }),
   mk({ id:'M002', name:'◆ 納品', kind:'milestone', duration:0,
        start:'2026-07-10', finish:'2026-07-10', wbsCode:'5', priority:'高', note:'契約上の納期' }),
+
+  /* ── P2 物流センター自動化 ───────────────────────────────
+     人を P1 と共有させています。担当者別に並べたときに
+     「同じ人の作業が別々のプロジェクトで重なっている」ことが
+     見えるかどうかを、この画面で確かめられるようにするためです。 */
+  mk({ id:'P201', name:'調査フェーズ', projectId:'P2', wbsCode:'1', dept:'生産技術課' }),
+  mk({ id:'P202', name:'現地調査', projectId:'P2', parentId:'P201', duration:8,
+       start:'2026-04-06', finish:'2026-04-15', progress:100, assignees:['山本'],
+       dept:'生産技術課', phase:'要件', priority:'高', location:'第二センター',
+       deliverable:'現地調査報告', wbsCode:'1.1', customer:'サンプル物流株式会社' }),
+  mk({ id:'P203', name:'機器選定', projectId:'P2', parentId:'P201', duration:10,
+       start:'2026-04-16', finish:'2026-04-27', progress:80, assignees:['山本','高橋'],
+       dept:'生産技術課', phase:'設計', priority:'高', reviewReq:'要',
+       deliverable:'機器仕様書', wbsCode:'1.2', vendor:'搬送機メーカー C' }),
+
+  mk({ id:'P210', name:'導入フェーズ', projectId:'P2', wbsCode:'2', dept:'生産技術課' }),
+  mk({ id:'P211', name:'搬入・据付', projectId:'P2', parentId:'P210', duration:12,
+       start:'2026-05-07', finish:'2026-05-22', assignees:['中村'], dept:'生産技術課',
+       phase:'移行', priority:'中', location:'第二センター', equipment:'クレーン',
+       wbsCode:'2.1', vendor:'搬送機メーカー C', contractNo:'C-2026-088' }),
+  mk({ id:'P212', name:'制御ソフト調整', projectId:'P2', parentId:'P210', duration:18,
+       start:'2026-05-11', finish:'2026-06-03', assignees:['佐藤','田中'], dept:'開発二課',
+       phase:'実装', priority:'高', estimate:'搬送機 6 台 × 3d',
+       location:'第二センター', wbsCode:'2.2', risk:'現地でしか試せない' }),
+
+  mk({ id:'PB21', name:'合流バッファ', kind:'buffer', projectId:'P2', duration:5,
+       start:'2026-06-04', finish:'2026-06-10', consumed:2, protects:'P220', wbsCode:'2.9' }),
+  mk({ id:'P220', name:'稼働確認', projectId:'P2', duration:8, start:'2026-06-11', finish:'2026-06-22',
+       assignees:['中村','佐藤'], dept:'生産技術課', phase:'試験', priority:'高', reviewReq:'要',
+       location:'第二センター', deliverable:'稼働確認記録', wbsCode:'3' }),
+  mk({ id:'PM21', name:'◆ 稼働開始', kind:'milestone', projectId:'P2', duration:0,
+       start:'2026-06-23', finish:'2026-06-23', wbsCode:'4', priority:'高', note:'繁忙期前が条件' }),
+
+  // ── P3 保守基盤の移行 ───────────────────────────────────
+  mk({ id:'P301', name:'移行計画', projectId:'P3', duration:6, start:'2026-04-20', finish:'2026-04-27',
+       progress:100, assignees:['鈴木'], dept:'情報システム課', phase:'要件', priority:'中',
+       deliverable:'移行計画書', wbsCode:'1' }),
+  mk({ id:'P310', name:'移行フェーズ', projectId:'P3', wbsCode:'2', dept:'情報システム課' }),
+  mk({ id:'P311', name:'データ移行', projectId:'P3', parentId:'P310', duration:14,
+       start:'2026-05-11', finish:'2026-05-28', assignees:['鈴木','高橋'], dept:'情報システム課',
+       phase:'移行', priority:'高', estimate:'表 240 本', location:'在宅',
+       wbsCode:'2.1', risk:'旧環境の停止時間に制約' }),
+  mk({ id:'P312', name:'切替リハーサル', projectId:'P3', parentId:'P310', duration:5,
+       start:'2026-05-29', finish:'2026-06-04', assignees:['高橋'], dept:'情報システム課',
+       phase:'試験', priority:'高', reviewReq:'要', wbsCode:'2.2' }),
+  mk({ id:'PB31', name:'プロジェクトバッファ', kind:'buffer', projectId:'P3', duration:6,
+       start:'2026-06-05', finish:'2026-06-12', consumed:4, protects:'PM31', wbsCode:'3' }),
+  mk({ id:'PM31', name:'◆ 移行完了', kind:'milestone', projectId:'P3', duration:0,
+       start:'2026-06-12', finish:'2026-06-12', wbsCode:'4', note:'保守契約の切替日' }),
 ];
 
 let deps = [
@@ -879,9 +992,22 @@ let deps = [
   { from:'T005', to:'T011' }, { from:'T011', to:'B002' },
   { from:'T006', to:'B002' }, { from:'B002', to:'T007' },
   { from:'T007', to:'B001' }, { from:'B001', to:'M002' },
+
+  { from:'P202', to:'P203' }, { from:'P203', to:'P211' }, { from:'P203', to:'P212' },
+  { from:'P211', to:'PB21' }, { from:'P212', to:'PB21' },
+  { from:'PB21', to:'P220' }, { from:'P220', to:'PM21' },
+
+  { from:'P301', to:'P311' }, { from:'P311', to:'P312' },
+  { from:'P312', to:'PB31' }, { from:'PB31', to:'PM31' },
 ];
 
-const CRITICAL = new Set(['T002','T003','B003','M001','T005','T011','B002','T007','B001','M002']);
+// プロジェクトごとのクリティカルチェーン。
+// ⚠️ どこが該当するかはサーバ側の計算結果です (Q-011)。ここでは決め打ちです。
+const CRITICAL = new Set([
+  'T002','T003','B003','M001','T005','T011','B002','T007','B001','M002',
+  'P202','P203','P212','PB21','P220','PM21',
+  'P301','P311','P312','PB31','PM31',
+]);
 const TODAY = '2026-05-11';
 
 // 読み込み時点の状態。差分の計算に使う（UI-DIFF-01）
@@ -900,7 +1026,9 @@ const UNITS = {
 };
 const state = {
   screen: 'gantt',
-  cols: ['name','kind','duration','start','finish','preds','assignee','phase','progress','wbsCode'],
+  cols: ['name','kind','duration','start','finish','preds','assignees','phase','progress','wbsCode'],
+  groupBy: 'project',          // project = プロジェクト別 / person = 担当者別
+  hiddenProjects: new Set(),   // 表示しないプロジェクト
   cur: { r:0, c:0 },       // カーソル位置（行・列）
   anc: { r:0, c:0 },       // 範囲選択の起点
   editing: null,
@@ -970,7 +1098,119 @@ function hiddenByCollapse(t) {
   }
   return false;
 }
-const rows = () => tasks.filter(t => !hiddenByCollapse(t));
+/* ============================================================
+   5.5 複数プロジェクト — 「判定しない。見えるようにする」
+
+   ここでやっているのは、**行の並べ方を変えること**だけです。
+   資源の取り合いを自動で判定したり、警告を出したり、
+   優先度で自動整列したりはしていません。
+
+   なぜか — 現場の調整はルールでは決まらないからです。
+   道具の役目は、判定して警告することではなく、
+   **状況が見えるようにして人が判断できるようにすること。**動かすのは人です。
+
+   考え方の全体は docs/ui/15-multi-project.md にあります。
+   ============================================================ */
+const inView = t => !state.hiddenProjects.has(t.projectId);
+const visibleProjects = () => PROJECTS.filter(p => !state.hiddenProjects.has(p.id));
+const projTasks = pid => tasks.filter(t => t.projectId === pid);
+const personMode = () => state.groupBy === 'person';
+
+// 作り物の行（プロジェクト名・担当者名の見出し）の目印。
+// 実データではないので、編集も並べ替えもさせません。
+const SYNTH = '@';
+const isSynth = t => !!(t && t._synthetic);
+
+/* まとめ行を作る。
+
+   rows() が返すのは**今まで通りタスクの配列**で、その中にこの作り物の行が
+   混ざります。rows() は 30 か所から使われているので、戻り値の形を
+   変えずに済ませています。描画側は _depth と _synthetic だけを見ます。 */
+function headRow(id, name, sub, members, color, projectId) {
+  const sp = members.map(span);
+  const ss = sp.map(x => x.s).filter(n => !isNaN(n));
+  const ff = sp.map(x => x.f).filter(n => !isNaN(n));
+  return { id, name, kind:'task', parentId:null, projectId:null,
+           _synthetic:true, _depth:0, _sub:sub, _color:color, _projectId:projectId,
+           _memberIds: members.map(t => t.id),
+           _s: ss.length ? Math.min(...ss) : NaN, _f: ff.length ? Math.max(...ff) : NaN };
+}
+const fmtSpan = h => (isNaN(h._s) || isNaN(h._f)) ? '' : `${fmtMD(h._s)} 〜 ${fmtMD(h._f)}`;
+
+// プロジェクト別（既定）— プロジェクトを親にして、その下は今までの階層のまま
+function rowsByProject() {
+  const out = [];
+  visibleProjects().forEach(p => {
+    const mine = projTasks(p.id);
+    if (!mine.length) return;
+    const head = headRow(SYNTH + 'proj:' + p.id, p.name, null,
+                         mine.filter(t => !t.parentId), p.color, p.id);
+    head._sub = mine.length + ' 件';
+    head._range = fmtSpan(head);
+    out.push(head);
+    if (state.collapsed.has(head.id)) return;
+    mine.forEach(t => { if (!hiddenByCollapse(t)) { t._depth = depth(t) + 1; out.push(t); } });
+  });
+  return out;
+}
+
+/* 担当者別 — 人を親にして、その人の全プロジェクトの作業を日程順に並べる。
+
+   **リソースの調整をするための並べ方です。**
+   プロジェクト別の表をいくら眺めても「この人が同じ時期に
+   別々のプロジェクトで取り合いになっている」ことは見えません。
+   行を人に変えて、1 本の時間軸に並べて初めて見えます。
+
+   重なりは見れば分かるので、警告は出しません。
+   1 つのタスクに複数人いる場合、そのタスクは**それぞれの人の下に現れます**。
+   同じタスクが 2 回出ますが、選択は行番号で持っているので問題ありません。 */
+function rowsByPerson() {
+  const leaves = tasks.filter(t => inView(t) && !isGroup(t));
+  /* 並び順は「最初の作業が始まる順」。
+     読み仮名を持っていないので五十音順には並べられません (Q-036)。
+     日程順なら、右のガントの流れと同じ向きに読めます。 */
+  const firstStart = nm => Math.min(...leaves
+    .filter(t => (t.assignees || []).includes(nm))
+    .map(t => d2n(t.start) || Infinity));
+  const names = [...new Set(leaves.flatMap(t => t.assignees || []))]
+    .sort((a, b) => (firstStart(a) - firstStart(b)) || a.localeCompare(b, 'ja'));
+  const out = [];
+  const put = (id, label, mine) => {
+    if (!mine.length) return;
+    mine = mine.slice().sort((a, b) => (d2n(a.start) || 0) - (d2n(b.start) || 0));
+    const head = headRow(id, label, null, mine, null, null);
+    head._sub = mine.length + ' 件';
+    head._range = fmtSpan(head);
+    out.push(head);
+    if (state.collapsed.has(head.id)) return;
+    mine.forEach(t => { t._depth = 1; out.push(t); });
+  };
+  names.forEach(nm => put(SYNTH + 'who:' + nm, nm,
+    leaves.filter(t => (t.assignees || []).includes(nm))));
+  put(SYNTH + 'who:', '担当なし', leaves.filter(t => !(t.assignees || []).length));
+  return out;
+}
+
+function rows() { return personMode() ? rowsByPerson() : rowsByProject(); }
+
+// いま操作の対象になっているプロジェクト（行を足すときの行き先）
+function currentProjectId() {
+  const r = rows()[state.cur.r];
+  const pid = r && (r._projectId || r.projectId);
+  if (pid && PROJ[pid]) return pid;
+  return (visibleProjects()[0] || PROJECTS[0]).id;
+}
+// 親を変えたら、プロジェクトは親に揃える。
+// 親と子が別のプロジェクトにいる形は、どちらの計画なのか決まらない。
+function setProject(t, pid) {
+  t.projectId = pid;
+  descendants(t.id).forEach(d => d.projectId = pid);
+}
+function adoptProject(id) {
+  const t = byId(id); if (!t || !t.parentId) return;
+  const p = byId(t.parentId); if (!p) return;
+  if (t.projectId !== p.projectId) setProject(t, p.projectId);
+}
 
 /* 並び順を階層順へ整える。
    ガントの並び順は tasks の配列順なので、ネットワーク図で親を変えても
@@ -986,7 +1226,13 @@ function normalizeOrder() {
       walk(t.id);          // 深さ優先。親の直後に子が続く
     });
   };
-  walk(null);
+  // 最上位はプロジェクトごとにまとめる。
+  // 配列の並びと画面の並びを一致させておくと、行の挿入位置が予測しやすい。
+  const known = id => (PROJ[id] ? id : null);
+  PROJECTS.map(p => p.id).concat([null]).forEach(pid => {
+    tasks.filter(t => !t.parentId && known(t.projectId) === pid)
+         .forEach(t => { out.push(t); walk(t.id); });
+  });
   // 親が消えているなど、たどり着けなかったものは末尾へ（取りこぼさない）
   tasks.forEach(t => { if (!out.includes(t)) out.push(t); });
   tasks = out;
@@ -1004,14 +1250,20 @@ function isDescendantOf(id, ancestorId) {
 function reparent(id, newParentId) {
   const t = byId(id);
   if (!t) return false;
+  // プロジェクトの枠へ落とした = そのプロジェクトの最上位へ引っ越す
+  let toProject = null;
+  if (isProjBox(newParentId)) { toProject = newParentId.slice(PROJ_BOX.length); newParentId = null; }
   if (newParentId === id) return false;
   if (newParentId && isDescendantOf(newParentId, id)) return false;   // 自分の子孫の中へは入れない
-  if ((t.parentId ?? null) === (newParentId ?? null)) return false;
+  if ((t.parentId ?? null) === (newParentId ?? null)
+      && (!toProject || t.projectId === toProject)) return false;
   pushUndo();
   t.parentId = newParentId ?? null;
+  if (toProject) setProject(t, toProject);
   // 新しい親の末尾へ回す（予測しやすいため）
   tasks = tasks.filter(x => x.id !== id);
   tasks.push(t);
+  adoptProject(id);
   normalizeOrder();
   if (newParentId) state.collapsed.delete(newParentId);
   return true;
@@ -1035,6 +1287,7 @@ function range() {
    （docs/interface/20-data-model.md の読み替え表と同じ考え方）。
    ============================================================ */
 function readOnly(t, key) {
+  if (isSynth(t)) return true;                            // まとめ行は実データではない
   if (F[key] && F[key].readonly) return true;             // 項目定義で指定されたもの
   if (isGroup(t) && ['duration','start','finish','progress'].includes(key)) return true;
   if (t.kind === 'milestone' && key === 'duration') return true;   // 時点なので期間なし
@@ -1042,6 +1295,7 @@ function readOnly(t, key) {
 }
 // 編集できない理由。ダイアログで添えて出す
 function readOnlyReason(t, key) {
+  if (isSynth(t)) return 'まとめ行なので、編集する項目はありません';
   if (F[key] && F[key].readonly) return F[key].help || 'この項目は編集できません';
   if (isGroup(t) && ['duration','start','finish','progress'].includes(key))
     return '子タスクから決まるため、直接は編集できません';
@@ -1051,6 +1305,9 @@ function readOnlyReason(t, key) {
 const TOP_LEVEL_LABEL = '（最上位 — 親なし）';
 
 function getVal(t, key) {
+  if (isSynth(t)) return key === 'name' ? t.name : '';
+  if (key === 'project')   return projName(t.projectId);
+  if (key === 'assignees') return (t.assignees || []).join('、');
   if (key === 'parent') return t.parentId ? nameOf(t.parentId) : TOP_LEVEL_LABEL;
   if (key === 'preds') return deps.filter(d => d.to === t.id).map(d => nameOf(d.from)).join(', ');
   if (key === 'succs') return deps.filter(d => d.from === t.id).map(d => nameOf(d.to)).join(', ');
@@ -1074,6 +1331,14 @@ function setVal(t, key, raw) {
   let v = String(raw).trim();
   if (key === 'parent') return;   // 親は一覧から選ぶ（reparent を通す）
   if (key === 'kind') { t.kind = KIND_OF[v] || 'task'; return; }
+  if (key === 'project') {
+    const pr = PROJECTS.find(x => x.name === v);
+    // 親がいるなら、プロジェクトは親に従う（食い違わせない）
+    if (pr && !t.parentId) setProject(t, pr.id);
+    return;
+  }
+  // 1 タスクに複数人。読点・カンマ・空白のどれで区切ってもよい
+  if (key === 'assignees') { t.assignees = v.split(/[、,\s]+/).filter(Boolean); return; }
   if (f.type === 'number') { const n = Number(v.replace(/[^\d.-]/g,'')); t[key] = isNaN(n) ? 0 : n; }
   else t[key] = v;
 
@@ -1112,10 +1377,13 @@ function renderGrid() {
   h += '<tbody>';
   rs.forEach((t, r) => {
     const cls = ['kind-' + t.kind];
-    if (isGroup(t)) cls.push('grouprow');
+    if (isSynth(t)) cls.push('headrow');
+    else if (isGroup(t)) cls.push('grouprow');
     if (r >= lo && r <= hi) cls.push('rowsel');
-    if (cs) cls.push(cs.ids.has(t.id) ? 'rowchg' : 'rowfade');
-    h += `<tr class="${cls.join(' ')}" data-r="${r}" data-id="${t.id}">`;
+    if (cs && !isSynth(t)) cls.push(cs.ids.has(t.id) ? 'rowchg' : 'rowfade');
+    // プロジェクトの色は行の左端の帯で示す（帯や枠の色は別の意味で使っている）
+    const pc = t._color || (PROJ[t.projectId] || {}).color || '';
+    h += `<tr class="${cls.join(' ')}" data-r="${r}" data-id="${t.id}"${pc ? ` style="--proj:${pc}"` : ''}>`;
     h += `<td class="rownum">${r + 1}</td>`;
     cols.forEach((k, c) => {
       const f = F[k], ro = readOnly(t, k);
@@ -1125,7 +1393,7 @@ function renderGrid() {
       if (f.type === 'link' || f.type === 'parent') cc.push('linkcell');
       if (r >= lo && r <= hi && c >= lc && c <= hc) cc.push('sel');
       if (r === state.cur.r && c === state.cur.c) cc.push('cursor');
-      if (cs) {
+      if (cs && !isSynth(t)) {
         const changedFields = cs.fields.get(t.id);
         const isNew = cs.diff.added.some(a => a.id === t.id);
         if (isNew || (changedFields && changedFields.has(k))) cc.push('chg');
@@ -1136,12 +1404,14 @@ function renderGrid() {
       let inner = String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
       if (k === 'name') {
-        const pad = depth(t) * 14;
-        const caret = isGroup(t)
+        const pad = (t._depth ?? depth(t)) * 14;
+        const foldable = isSynth(t) || isGroup(t);
+        const caret = foldable
           ? `<span class="caret" data-caret="${t.id}">${state.collapsed.has(t.id) ? '▸' : '▾'}</span>`
           : '<span class="caret"></span>';
         const dot = CRITICAL.has(t.id) ? '<span class="cc-dot"></span>' : '';
-        inner = `<div class="tw" style="padding-left:${pad}px">${caret}${dot}<span style="overflow:hidden;text-overflow:ellipsis">${inner}</span></div>`;
+        const sub = t._sub ? `<span class="hsub">${t._sub}</span>` : '';
+        inner = `<div class="tw" style="padding-left:${pad}px">${caret}${dot}<span style="overflow:hidden;text-overflow:ellipsis">${inner}</span>${sub}</div>`;
       }
       h += `<td class="${cc.join(' ')}" data-r="${r}" data-c="${c}" title="${String(v).replace(/"/g,'')}">${inner}</td>`;
     });
@@ -1178,6 +1448,7 @@ const CURRENT = () => ({ tasks, deps });
 function axisRange() {
   let mn = Infinity, mx = -Infinity;
   const scan = ds => withData(ds, () => tasks.forEach(t => {
+    if (!inView(t)) return;          // 隠したプロジェクトのぶんまで軸を伸ばさない
     const sp = span(t);
     if (!isNaN(sp.s)) mn = Math.min(mn, sp.s);
     if (!isNaN(sp.f)) mx = Math.max(mx, sp.f);
@@ -1298,6 +1569,26 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
   const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
   const bars = list.map((row, r) => {
     const sel = (r >= lo && r <= hi) ? ' rowsel' : '';
+    const pc = row._color || (PROJ[row.projectId] || {}).color || '';
+    const ps = pc ? ` style="--proj:${pc}"` : '';
+    if (row._synthetic) {
+      /* まとめ行は「いつからいつまで」だけを出す。
+         「誰がいつ何 % 埋まっている」は出さない — 工数や割当率が
+         確認できておらず (Q-034)、無いまま描くと掛け持ちと
+         溢れているのを区別できない嘘のグラフになる。 */
+      // 見比べのときは、その面のデータで期間を測り直す。
+      // 手前で計算した値をそのまま使うと、左右の帯が同じ長さになってしまう。
+      const hs = withData(ds, () => {
+        const sp = (row._memberIds || []).map(byId).filter(Boolean).map(span);
+        const ss = sp.map(v => v.s).filter(n => !isNaN(n));
+        const ff = sp.map(v => v.f).filter(n => !isNaN(n));
+        return ss.length ? { s: Math.min(...ss), f: Math.max(...ff) } : null;
+      });
+      const band = hs
+        ? `<div class="headspan" style="left:${x(hs.s)}px;width:${Math.max(8, x(hs.f + DAY) - x(hs.s))}px"
+             title="${row.name} — ${fmtMD(hs.s)} 〜 ${fmtMD(hs.f)}"></div>` : '';
+      return `<div class="grow headrow${sel}" data-r="${r}" data-id="${row.id}"${ps}>${band}</div>`;
+    }
     const g = withData(ds, () => {
       const t = byId(row.id); if (!t) return null;
       const sp = span(t);
@@ -1306,7 +1597,7 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
     if (!g || isNaN(g.s)) {
       // この面には存在しない行（見比べで、片側にしかないもの）
       const ghost = ds === ORIGINAL ? '<div class="rowghost">この時点には無い</div>' : '';
-      return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}">${ghost}</div>`;
+      return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}"${ps}>${ghost}</div>`;
     }
     const t = g.t;
     const dim = cs && !cs.ids.has(t.id) ? ' faded' : '';
@@ -1332,7 +1623,7 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
         <span class="bl">${state.dayW >= 5 ? t.name : ''}</span>
         ${active ? handleHtml() : ''}</div>`;
     }
-    return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}">${body}</div>`;
+    return `<div class="grow${sel}" data-r="${r}" data-id="${row.id}"${ps}>${body}</div>`;
   }).join('');
 
   const H = list.length * 26;
@@ -1350,6 +1641,9 @@ function handleHtml() {
 function drawDeps(n, ds, list, x, cs) {
   const svg = document.getElementById('deplayer' + n);
   if (!svg) return;
+  // 担当者別では同じタスクが複数の行に出るため、線を引く先が定まらない。
+  // 無理に引くと嘘の線になるので引かない。
+  if (personMode()) { svg.innerHTML = ''; return; }
   const idx = Object.fromEntries(list.map((t, i) => [t.id, i]));
   const curId = list[state.cur.r] ? list[state.cur.r].id : null;
   const parts = withData(ds, () => deps.map(d => {
@@ -1400,19 +1694,57 @@ function wrapName(name, per, maxLines) {
   return out.length ? out : [''];
 }
 
-const netVisible = t => state.showExtras || t.kind === 'task' || isGroup(t);
+const netVisible = t => inView(t) && (state.showExtras || t.kind === 'task' || isGroup(t));
+
+/* プロジェクトを「いちばん外側の枠」として足す (UI-NET-18)。
+
+   入れ子の枠はもともと作ってあるので、**枠を 1 段外に足すだけ**で
+   畳む・広げる・中身ごと動かすがそのまま効きます。新しい仕組みは増やしません。
+
+   そのために、この図の中だけで使う「親」を用意します。
+   最上位のタスク（親を持たないもの）の親を、プロジェクトの枠とみなします。 */
+const PROJ_BOX = SYNTH + 'proj:';
+const isProjBox = id => typeof id === 'string' && id.startsWith(PROJ_BOX);
+const netGrouped = () => visibleProjects().filter(p => projTasks(p.id).length).length > 1;
+
+const projBoxCache = {};
+const projBox = p => (projBoxCache[p.id] ||= {
+  id: PROJ_BOX + p.id, name: p.name, kind: 'task', parentId: null,
+  projectId: p.id, _synthetic: true, _project: p });
+
+function netParentOf(id) {
+  if (isProjBox(id)) return null;
+  const t = byId(id);
+  if (!t) return null;
+  if (t.parentId) return t.parentId;
+  return netGrouped() ? PROJ_BOX + t.projectId : null;
+}
+function netMembers(parentId) {
+  if (parentId === null) {
+    return netGrouped()
+      ? visibleProjects().filter(p => projTasks(p.id).length).map(projBox)
+      : tasks.filter(t => !t.parentId && netVisible(t));
+  }
+  if (isProjBox(parentId)) {
+    const pid = parentId.slice(PROJ_BOX.length);
+    return tasks.filter(t => !t.parentId && t.projectId === pid && netVisible(t));
+  }
+  return tasks.filter(t => t.parentId === parentId && netVisible(t));
+}
+// 畳める = 中に図が入るもの。プロジェクトの枠も含む
+const netFoldable = t => isSynth(t) || isGroup(t);
 
 /**
  * ひとつの階層のメンバーを並べる。中に枠があれば再帰する。
  * 返す座標は「その階層の中での位置」。絶対座標は netLayout() で足し込む。
  */
 function layoutMembers(parentId, depth) {
-  const members = tasks.filter(t => t.parentId === parentId && netVisible(t));
+  const members = netMembers(parentId);
   if (!members.length) return { items: [], w: 0, h: 0, bottom: 0 };
 
   // 各メンバーの大きさ。開いている枠は中身から決まる
   const items = members.map(t => {
-    const expanded = isGroup(t) && !state.collapsed.has(t.id);
+    const expanded = netFoldable(t) && !state.collapsed.has(t.id);
     if (expanded) {
       const inner = layoutMembers(t.id, depth + 1);
       return { t, inner, depth, container: true,
@@ -1427,7 +1759,7 @@ function layoutMembers(parentId, depth) {
      そのため依存の両端を、この階層に属する先祖に読み替える。
      これをしないと枠の中と外で順序が食い違い、線が右から左へ戻る。 */
   const idset = new Set(members.map(t => t.id));
-  const owner = id => { let c = id, g = 0; while (c && g++ < 60) { if (idset.has(c)) return c; c = (byId(c) || {}).parentId; } return null; };
+  const owner = id => { let c = id, g = 0; while (c && g++ < 60) { if (idset.has(c)) return c; c = netParentOf(c); } return null; };
   const pairs = [];
   deps.forEach(d => {
     const a = owner(d.from), b = owner(d.to);
@@ -1471,13 +1803,17 @@ function layoutMembers(parentId, depth) {
   }
 
   // 座標。段ごとに左から右へ、段の中は上から下へ
+  /* いちばん外側のプロジェクトの枠だけは左揃えにする。
+     中央揃えのままだと、幅の違う枠が段違いに並んで
+     「なぜずれているのか」が読み取れない。 */
+  const centering = (parentId === null && netGrouped()) ? 0 : 0.5;
   let x = 0;
   keys.forEach(L => {
     const arr = byLayer[L];
     const colW = Math.max(...arr.map(it => it.w));
     let y = 0;
     arr.forEach(it => {
-      it.x = x + (colW - it.w) / 2;
+      it.x = x + (colW - it.w) * centering;
       it.y = y;
       it.layer = L;
       // 手で動かしたぶんは「枠の中でのずれ」として持つ。
@@ -1526,8 +1862,8 @@ function netLayout() {
 function netEdges(pos) {
   const rep = id => {
     if (pos[id]) return id;
-    let c = (byId(id) || {}).parentId;
-    while (c) { if (pos[c]) return c; c = (byId(c) || {}).parentId; }
+    let c = netParentOf(id);
+    while (c) { if (pos[c]) return c; c = netParentOf(c); }
     return null;
   };
   const seen = new Set(), out = [];
@@ -1579,7 +1915,7 @@ function edgeDips(a, b, bottomOf) {
 
 // 2 つのタスクの共通の祖先
 function commonAncestor(idA, idB) {
-  const chain = id => { const out = []; let c = (byId(id) || {}).parentId; while (c) { out.push(c); c = (byId(c) || {}).parentId; } return out; };
+  const chain = id => { const out = []; let c = netParentOf(id); while (c) { out.push(c); c = netParentOf(c); } return out; };
   const a = chain(idA), b = new Set(chain(idB));
   return a.find(x => b.has(x)) ?? null;
 }
@@ -1588,7 +1924,7 @@ function commonAncestor(idA, idB) {
 function levelBox(node, common, pos) {
   let cur = node.id, guard = 0;
   while (cur && guard++ < 60) {
-    const par = (byId(cur) || {}).parentId ?? null;
+    const par = netParentOf(cur);
     if (par === common) break;
     cur = par;
   }
@@ -1699,19 +2035,23 @@ function drawNet(n, ds, cs, isBefore) {
     ed.forEach(d => { if (d.from === curId) related.add(d.to); if (d.to === curId) related.add(d.from); });
   }
   // クリティカルチェーンが中を通る枠は、枠も強調する
-  const ccBox = id => CRITICAL.has(id) ||
-    (pos[id] && pos[id].container && withData(ds, () => descendants(id).some(x => CRITICAL.has(x.id))));
+  const ccBox = id => !isProjBox(id) && (CRITICAL.has(id) ||
+    (pos[id] && pos[id].container && withData(ds, () => descendants(id).some(x => CRITICAL.has(x.id)))));
 
   // --- 枠（浅い順に描く。後から描いたものが前面に来るため中身が上になる）
   const containers = boxes.filter(b => b.container).sort((a, b) => a.depth - b.depth);
   const containersSvg = containers.map(b => {
+    const pr = b.t._project;                 // プロジェクトの枠かどうか
     const cls = ['net-box'];
-    if (ccBox(b.id)) cls.push('cc');
+    if (pr) cls.push('proj');
+    if (!pr && ccBox(b.id)) cls.push('cc');
     if (b.id === curId) cls.push('sel');
-    if (cs && !cs.ids.has(b.id)) cls.push('faded');
-    const kids = withData(ds, () => childrenOf(b.id).length);
+    if (!pr && cs && !cs.ids.has(b.id)) cls.push('faded');
+    const kids = pr
+      ? withData(ds, () => tasks.filter(t => t.projectId === pr.id).length)
+      : withData(ds, () => childrenOf(b.id).length);
     const nm = b.name || b.t.name;
-    return `<g class="${cls.join(' ')}" data-node="${b.id}" data-container="1" transform="translate(${b.x},${b.y})">
+    return `<g class="${cls.join(' ')}" data-node="${b.id}" data-container="1"${pr ? ` style="--proj:${pr.color}"` : ''} transform="translate(${b.x},${b.y})">
       <rect class="box" width="${b.w}" height="${b.h}" rx="8" style="--lv:${b.depth}"/>
       <rect class="head" width="${b.w}" height="${NET_HEAD}" rx="8" data-boxhead="${b.id}"/>
       <text class="b-caret" data-caret="${b.id}" x="12" y="${NET_HEAD - 7}">▾</text>
@@ -1744,16 +2084,22 @@ function drawNet(n, ds, cs, isBefore) {
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
     if (b.manual) cls.push('moved');
-    if (isGroup(t)) cls.push('collapsed-group');
-    const sub = t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
+    if (netFoldable(t)) cls.push('collapsed-group');
+    const pr = t._project;
+    const sub = pr ? `${withData(ds, () => tasks.filter(q => q.projectId === pr.id).length)} 件（畳んでいます）`
+              : t.kind === 'buffer' ? `${t.consumed}/${t.duration}d 消費`
               : t.kind === 'milestone' ? t.start
               : isGroup(t) ? `${withData(ds, () => descendants(t.id).length)} 件（畳んでいます）`
-              : `${t.duration}d ・ ${t.assignee || '—'}`;
-    const caret = isGroup(t)
+              : `${t.duration}d ・ ${(t.assignees || []).join('、') || '—'}`;
+    const fold = netFoldable(t);
+    const caret = fold
       ? `<text class="b-caret" data-caret="${b.id}" x="11" y="20">▸</text>` : '';
-    const lines = wrapName(t.name, isGroup(t) ? 10 : 11, 2);
+    const lines = wrapName(t.name, fold ? 10 : 11, 2);
     const nameSvg = lines.map((ln, li) =>
-      `<text class="n-name" x="${isGroup(t) ? 25 : 11}" y="${19 + li * 14}">${esc(ln)}</text>`).join('');
+      `<text class="n-name" x="${fold ? 25 : 11}" y="${19 + li * 14}">${esc(ln)}</text>`).join('');
+    /* ノードには色帯を付けません。
+       どのプロジェクトかは外側の枠が示しているので、
+       同じことを 2 か所で言うと、かえって何の印か分からなくなります。 */
     const handles = (b.id === curId && !isBefore) ? `
       <circle class="net-handle" data-nethandle="in"  data-id="${b.id}" cx="0" cy="${b.h/2}" r="6"/>
       <circle class="net-handle" data-nethandle="out" data-id="${b.id}" cx="${b.w}" cy="${b.h/2}" r="6"/>` : '';
@@ -1781,8 +2127,18 @@ function drawNet(n, ds, cs, isBefore) {
 /* ============================================================
    10. 差分（読み込み時点との実比較）— UI-DIFF-01
    ============================================================ */
-const DIFF_KEYS = FIELDS.map(f => f.key).filter(k => !['preds','succs','kind'].includes(k))
-  .concat(['kind','consumed','protects','parentId']);
+const DIFF_KEYS = FIELDS.map(f => f.key).filter(k => !['preds','succs','kind','project'].includes(k))
+  .concat(['kind','consumed','protects','parentId','projectId']);
+
+// 項目定義に無いもの（内部の持ち方）の表示名と、値の読み替え
+const EXTRA_LABEL = { parentId:'親タスク', projectId:'プロジェクト', consumed:'消費', protects:'保護対象' };
+const diffShow = (k, v) => {
+  if (v === '' || v === undefined || v === null) return '';
+  if (k === 'projectId') return projName(v) || v;
+  if (k === 'parentId' || k === 'protects') return nameOf(v);
+  if (k === 'assignees') return [].concat(v).join('、');
+  return v;
+};
 
 function computeDiff() {
   const o = ORIGINAL, oMap = Object.fromEntries(o.tasks.map(t => [t.id, t]));
@@ -1795,8 +2151,8 @@ function computeDiff() {
     const fields = DIFF_KEYS.filter(k => String(ot[k] ?? '') !== String(t[k] ?? ''))
       .map(k => {
         const u = (F[k] || {}).unit || '';
-        const fmt = v => (v === '' || v === undefined || v === null) ? '' : v + u;
-        return { key:k, label:(F[k] || {}).label || k, from:fmt(ot[k]), to:fmt(t[k]) };
+        const fmt = v => { const x = diffShow(k, v); return x === '' ? '' : x + u; };
+        return { key:k, label:(F[k] || {}).label || EXTRA_LABEL[k] || k, from:fmt(ot[k]), to:fmt(t[k]) };
       });
     if (fields.length) changed.push({ task:t, fields });
   });
@@ -1868,6 +2224,11 @@ function renderDetail() {
   const rs = rows(), t = rs[state.cur.r];
   let h;
   if (!t) h = '<p class="none">行を選ぶと、ここに全項目が表示されます。</p>';
+  else if (isSynth(t)) {
+    h = `<h3>${t.name.replace(/</g,'&lt;')} <span class="hint">まとめ行</span></h3>
+      <p class="none">${t._sub || ''}${t._range ? ' ・ ' + t._range : ''}<br>
+      <span style="font-size:11.5px">まとめ行そのものには編集する項目はありません。下の行を選んでください。</span></p>`;
+  }
   else {
     const pairs = FIELDS.filter(f => !['name'].includes(f.key)).map(f => {
       let v = getVal(t, f.key);
@@ -1886,9 +2247,10 @@ function renderAll() {
   document.getElementById('btnUndo').disabled = !undoStack.length;
   document.getElementById('btnRedo').disabled = !redoStack.length;
   const sel = rows()[state.cur.r];
-  document.getElementById('netOutdent').disabled = !sel || !sel.parentId;
-  document.getElementById('netParent').disabled = !sel;
-  document.getElementById('netDel').disabled = !sel;
+  const real = sel && !isSynth(sel);
+  document.getElementById('netOutdent').disabled = !real || !sel.parentId;
+  document.getElementById('netParent').disabled = !real;
+  document.getElementById('netDel').disabled = !real;
   if (typeof placeInput === 'function') placeInput();
   syncScroll();
 }
@@ -2058,14 +2420,20 @@ function clearSel() {
 /* タスクを足す (UI-NET-15)。足したらすぐプロパティ編集を開く。
    名前が「新しいタスク」のまま図に残ると、何の作業か分からなくなるため。 */
 function addTask(parentId) {
+  // ネットワーク図のプロジェクトの枠から足したときは、そのプロジェクトの最上位へ
+  const projBoxId = isProjBox(parentId) ? parentId : null;
+  const pid = projBoxId ? projBoxId.slice(PROJ_BOX.length) : null;
+  if (projBoxId) parentId = null;
   const id = newId('T');
   const t = mk({ id, name:'新しいタスク', parentId: parentId ?? null, duration:1,
+                 projectId: pid || (parentId ? (byId(parentId) || {}).projectId : null) || currentProjectId(),
                  start:'2026-05-01', createdAt:'2026-08-29', updatedAt:'2026-08-29' });
   setVal(t, 'duration', 1);
   pushUndo();
   tasks.push(t);
   normalizeOrder();
   if (parentId) state.collapsed.delete(parentId);
+  if (projBoxId) state.collapsed.delete(projBoxId);
   const i = rows().findIndex(x => x.id === id);
   if (i >= 0) { state.cur.r = state.anc.r = i; }
   renderAll();
@@ -2074,7 +2442,7 @@ function addTask(parentId) {
 
 // 選択中のタスクを、子孫ごと削除する
 function deleteTask(id) {
-  const t = byId(id); if (!t) return;
+  const t = byId(id); if (!t) return;   // まとめ行やプロジェクトの枠は消せない
   const victims = new Set([id, ...descendants(id).map(d => d.id)]);
   pushUndo();
   tasks = tasks.filter(x => !victims.has(x.id));
@@ -2085,9 +2453,12 @@ function deleteTask(id) {
 }
 
 function insertRow() {
-  const rs = rows(), at = rs[state.cur.r];
+  if (personMode()) return;   // 人の下の並びに意味がないため
+  const rs = rows(), row = rs[state.cur.r];
+  const at = (row && !isSynth(row)) ? row : null;
   const id = newId('T');
   const t = mk({ id, name:'新しいタスク', parentId: at ? at.parentId : null, duration:1,
+                 projectId: at ? at.projectId : currentProjectId(),
                  start: at ? at.start : '2026-04-01', createdAt:'2026-08-29', updatedAt:'2026-08-29' });
   setVal(t, 'duration', 1);
   pushUndo();
@@ -2101,10 +2472,11 @@ function insertRow() {
   renderAll();
 }
 function deleteRows() {
+  if (personMode()) return;
   const rs = rows(), s = selRect();
   const victims = new Set();
   for (let r = s.r0; r <= s.r1; r++) {
-    const t = rs[r]; if (!t) continue;
+    const t = rs[r]; if (!t || isSynth(t)) continue;
     victims.add(t.id);
     descendants(t.id).forEach(d => victims.add(d.id));
   }
@@ -2116,17 +2488,20 @@ function deleteRows() {
   renderAll();
 }
 function indent() {
-  const rs = rows(), t = rs[state.cur.r]; if (!t) return;
+  if (personMode()) return;
+  const rs = rows(), t = rs[state.cur.r]; if (!t || isSynth(t)) return;
   const i = tasks.indexOf(t);
-  // 直前にある「同じ階層の行」を親にする
+  // 直前にある「同じ階層・同じプロジェクトの行」を親にする。
+  // 別のプロジェクトの行を親にすると、どちらの計画なのか決まらなくなる。
   for (let k = i - 1; k >= 0; k--) {
-    if (tasks[k].parentId === t.parentId) {
+    if (tasks[k].parentId === t.parentId && tasks[k].projectId === t.projectId) {
       pushUndo(); t.parentId = tasks[k].id; state.collapsed.delete(tasks[k].id); renderAll(); return;
     }
   }
 }
 function outdent() {
-  const rs = rows(), t = rs[state.cur.r]; if (!t || !t.parentId) return;
+  if (personMode()) return;
+  const rs = rows(), t = rs[state.cur.r]; if (!t || isSynth(t) || !t.parentId) return;
   const parent = byId(t.parentId);
   pushUndo();
   t.parentId = parent ? parent.parentId : null;
@@ -2151,6 +2526,8 @@ const INDENT_PX = 14;   // 1 段あたりの横幅。表の描画と合わせる
 function startRowDrag(startRow, ev) {
   ev.preventDefault();
   const rs = rows();
+  // 担当者別では、人の下の並びに意味がない。まとめ行そのものも動かせない。
+  if (personMode() || isSynth(rs[startRow])) return;
 
   // 選択範囲にかかっていれば範囲ごと、そうでなければその行だけ動かす
   const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
@@ -2160,7 +2537,7 @@ function startRowDrag(startRow, ev) {
   // 動かす行と、その子孫。親だけ動いて子が置き去りになると計画が壊れる
   const moving = [];
   for (let r = from; r <= to; r++) {
-    const t = rs[r]; if (!t || moving.includes(t)) continue;
+    const t = rs[r]; if (!t || isSynth(t) || moving.includes(t)) continue;
     moving.push(t);
     descendants(t.id).forEach(d => { if (!moving.includes(d)) moving.push(d); });
   }
@@ -2192,7 +2569,7 @@ function startRowDrag(startRow, ev) {
     while (idx > 0 && movingIds.has(rs[idx - 1] && rs[idx - 1].id) && idx - 1 >= from && idx - 1 <= to) idx--;
 
     // 直前の行より 1 段深いところまで。それ以上だと親のいない子ができる
-    const prev = rs.slice(0, idx).reverse().find(t => !movingIds.has(t.id));
+    const prev = rs.slice(0, idx).reverse().find(t => !isSynth(t) && !movingIds.has(t.id));
     const maxDepth = prev ? depth(prev) + (isGroup(prev) || true ? 1 : 0) : 0;
     const wanted = Math.round((e.clientX - sx) / INDENT_PX) + (rs[from] ? depth(rs[from]) : 0);
     const d = Math.max(0, Math.min(maxDepth, wanted));
@@ -2229,7 +2606,7 @@ function applyRowDrop(moving, drop) {
   // 落とし先が動かしている行そのものなら、その塊の次の行を目印にする。
   // ここで打ち切ってしまうと「真横にずらして階層だけ変える」ができない。
   let ai = drop.idx;
-  while (ai < rs.length && movingIds.has(rs[ai].id)) ai++;
+  while (ai < rs.length && (isSynth(rs[ai]) || movingIds.has(rs[ai].id))) ai++;
   const anchor = rs[ai] || null;           // ここの直前に入れる
 
   // 新しい親を決める。落とした深さになるよう、直前の行から辿る
@@ -2262,6 +2639,7 @@ function applyRowDrop(moving, drop) {
     undoStack.pop();          // 位置も親も変わっていない
     renderAll(); return;
   }
+  adoptProject(top.id);       // プロジェクトは親に揃える
   normalizeOrder();           // 並びの決まりは 1 つに
 
   // 折りたたまれた親の中へ入れたときは開く（消えたように見えるため）
@@ -2600,6 +2978,49 @@ function openColumns(anchorEl) {
 }
 
 /* ============================================================
+   16.5 表示するプロジェクトを選ぶ (UI-COMMON-08)
+
+   複数プロジェクトを一度に出すと図も表も大きくなります。
+   「いま調整したい 2 つだけ見る」ができるようにしておきます。
+
+   ⚠️ ここでやるのは**隠すこと**だけです。
+      隠したプロジェクトのタスクを消したり、書き換えたりはしません。
+   ============================================================ */
+function openProjects(anchorEl) {
+  closePop();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  const draw = () => {
+    pop.innerHTML = `<div class="pop-head">表示するプロジェクト</div><div class="pop-body">` +
+      PROJECTS.map(p => `<label class="pop-item"><input type="checkbox" data-proj="${p.id}"
+        ${state.hiddenProjects.has(p.id) ? '' : 'checked'}>
+        <span class="proj-chip"><i style="background:${p.color}"></i>${p.name}</span>
+        <span class="sub">${projTasks(p.id).length}</span></label>`).join('') +
+      `</div><div class="pop-foot">隠すだけです。中身は変わりません</div>`;
+  };
+  draw();
+  document.getElementById('popLayer').appendChild(pop);
+  placePop(pop, anchorEl);
+  pop.addEventListener('change', e => {
+    const id = e.target.dataset.proj; if (!id) return;
+    e.target.checked ? state.hiddenProjects.delete(id) : state.hiddenProjects.add(id);
+    // 全部消すと何も見えなくなるので、最後の 1 つは残す
+    if (!visibleProjects().length) { state.hiddenProjects.delete(id); draw(); return; }
+    state.cur.r = state.anc.r = Math.min(state.cur.r, Math.max(0, rows().length - 1));
+    renderAll();
+    renderProjLegend();
+  });
+}
+
+// 凡例。どの色がどのプロジェクトかを、両方の画面に出す
+function renderProjLegend() {
+  const h = PROJECTS.map(p =>
+    `<span class="proj-chip${state.hiddenProjects.has(p.id) ? ' off' : ''}">
+       <i style="background:${p.color}"></i>${p.name}</span>`).join(' ');
+  document.querySelectorAll('.proj-legend').forEach(el => el.innerHTML = h);
+}
+
+/* ============================================================
    17. 操作の受け付け
    ============================================================ */
 
@@ -2810,7 +3231,10 @@ function startNodeMove(id, svg, ev) {
      位置の移動と親の付け替えを、同じドラッグで扱う。
      入れ子の道具では「どこに置いたか」がそのまま所属を意味するのが自然で、
      覚えることが増えない。 */
+  // プロジェクトの枠そのものは、位置を動かすだけ（親は持たない）
+  const canReparent = !isProjBox(id);
   const dropTargetAt = (cx, cy) => {
+    if (!canReparent) return { id: null, ok: true };
     const el = document.elementFromPoint(cx, cy);
     if (!el) return { id: null, ok: true };            // 図の外 → いちばん上の階層
     const t = el.closest('[data-node]');
@@ -2834,6 +3258,9 @@ function startNodeMove(id, svg, ev) {
     if (!tgt.ok) { text = 'ここへは入れられません（自分の子孫です）'; cls = 'ng'; }
     else if ((tgt.id ?? null) === cur) { text = '位置を動かすだけ（親は変わりません）'; cls = 'same'; }
     else if (!tgt.id) text = '最上位に出す';
+    else if (isProjBox(tgt.id)) {
+      text = `「${projName(tgt.id.slice(PROJ_BOX.length))}」へ移す（最上位）`;
+    }
     else {
       const to = byId(tgt.id);
       text = isGroup(to) ? `「${to.name}」の中に入れる` : `「${to.name}」の子にする`;
@@ -2867,7 +3294,8 @@ function startNodeMove(id, svg, ev) {
 
     if (!drop.ok) { renderNet(); return; }           // 受け取れない先。元へ戻す
     const cur = (byId(id) || {}).parentId ?? null;
-    if ((drop.id ?? null) !== cur) {
+    const wantProj = isProjBox(drop.id) ? drop.id.slice(PROJ_BOX.length) : null;
+    if ((drop.id ?? null) !== cur || (wantProj && (byId(id) || {}).projectId !== wantProj)) {
       delete state.netPos[id];                       // 引っ越したら位置のずれは持ち越さない
       if (reparent(id, drop.id)) {
         const i = rows().findIndex(t => t.id === id);
@@ -2918,6 +3346,42 @@ function markUnit() {
     o.setAttribute('aria-pressed', String(o.dataset.zoom === state.unit)));
 }
 document.getElementById('allDeps').onchange = e => { state.allDeps = e.target.checked; renderChart(); };
+
+/* 並べ方の切り替え (UI-GANTT-27)。
+
+   担当者別では、行の挿入・削除・階層の変更・行のドラッグ・依存の線を
+   効かせません。人の下の並びには意味がないからです。
+   押せてしまうと「できるのにできない」という嘘になるので、見た目でも止めます。
+   **セルの編集はできます**（出ているのは同じタスクの実体そのものです）。 */
+const LOCKED_IN_PERSON = {
+  btnInsert: '行の挿入', btnDelete: '行の削除',
+  btnIndent: '階層の変更', btnOutdent: '階層の変更',
+};
+Object.keys(LOCKED_IN_PERSON).forEach(id => {
+  const el = document.getElementById(id);
+  el.dataset.title0 = el.title;
+});
+document.querySelectorAll('[data-groupby]').forEach(b => b.onclick = () => {
+  state.groupBy = b.dataset.groupby;
+  state.cur = { r:0, c:0 }; state.anc = { r:0, c:0 };
+  markGroupBy(); renderAll(); focusGrid();
+});
+function markGroupBy() {
+  document.querySelectorAll('[data-groupby]').forEach(o =>
+    o.setAttribute('aria-pressed', String(o.dataset.groupby === state.groupBy)));
+  const person = personMode();
+  Object.entries(LOCKED_IN_PERSON).forEach(([id, what]) => {
+    const el = document.getElementById(id);
+    el.disabled = person;
+    el.title = person ? `担当者別では${what}はできません（プロジェクト別に切り替えてください）`
+                      : el.dataset.title0;
+  });
+  document.getElementById('ganttHint').innerHTML = person
+    ? '同じ人の作業を、全プロジェクトまとめて日程順に並べています。'
+      + '<b>セルの編集はできます</b>／並べ替え・階層・依存の線はできません'
+    : 'セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層 / 行番号をダブルクリックで全項目';
+}
+document.querySelectorAll('.pfilter').forEach(b => b.onclick = e => openProjects(e.currentTarget));
 document.getElementById('btnCols').onclick   = e => openColumns(e.currentTarget);
 document.getElementById('btnInsert').onclick = () => { insertRow(); focusGrid(); };
 document.getElementById('btnDelete').onclick = () => { deleteRows(); focusGrid(); };
@@ -3030,6 +3494,8 @@ document.addEventListener('mousedown', e => {
 
 markUnit();
 markDiff();
+markGroupBy();
+renderProjLegend();
 renderAll();
 placeInput();
 focusGrid();

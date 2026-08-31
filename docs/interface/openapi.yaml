@@ -170,9 +170,17 @@ paths:
         - 画面を再読み込みしたとき
         - **保存が衝突（409）したあと、最新を取り直すとき**（UI-DIFF-06）
 
+        複数プロジェクトの表示（UI-GANTT-27 / UI-COMMON-08 / UI-NET-18）は、
+        **ここで受け取ったデータの並べ替えと絞り込みだけ**で成り立ちます。
+        新しい呼び出しは要りません。
+
+        ⚠️ ただし、プロジェクトごとに計画ファイルが分かれている場合は、
+        **複数のファイルを同時に開く**必要が出ます (Q-035)。
+        そのときは POST /plans と、この API の呼び方が変わります。
+
         確定度: 🔴 推測 (Q-003)
       operationId: getPlan
-      x-ui-operations: [UI-GANTT-01, UI-NET-01, UI-DIFF-06]
+      x-ui-operations: [UI-GANTT-01, UI-NET-01, UI-DIFF-06, UI-GANTT-27, UI-COMMON-08, UI-NET-18]
       responses:
         "200":
           description: 現在の計画

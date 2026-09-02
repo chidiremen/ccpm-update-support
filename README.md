@@ -113,6 +113,7 @@ docs/
     13-diff.md              変更内容の見せ方（画面に重ねる）
     14-navigation.md        画面遷移
     15-multi-project.md     複数プロジェクトとリソースの調整
+    16-adjust.md            調整パネル（1 人に特化して、試して・決めて・記録する）
   interface/              画面側とサーバ側の境界の仕様
     20-data-model.md        計画ファイルの構造
     21-api.md               API の解説版

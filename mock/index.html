@@ -511,6 +511,57 @@ details.chglist[hidden] { display: none; }
   color: var(--accent); cursor: pointer; width: 100%;
 }
 
+/* --- 調整パネル（1 人に特化） -------------------------------
+   会議の場で「試して、決めて、記録する」ための画面。
+   ここで触ったことは「適用」を押すまで計画に入らない。 */
+.modal.adj { width: min(1180px, 96vw); max-height: 88vh; }   /* 高さは中身に合わせる。レーンが 2 本なら 2 本ぶん */
+.adj-body { display: grid; grid-template-columns: 1fr 260px; padding: 0; overflow: hidden; flex: 1; min-height: 0; }
+.adj-left { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding: 10px 12px; gap: 10px; }
+.adj-tl { position: relative; overflow: auto; border: 1px solid var(--border-2); border-radius: 6px; background: var(--panel); flex: 0 1 auto; max-height: 48vh; }
+.adj-axis { position: relative; height: 22px; border-bottom: 1px solid var(--border); background: var(--head); }
+.adj-tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border-2); font-size: 9.5px; color: var(--text-faint); padding-left: 3px; white-space: nowrap; line-height: 22px; }
+.adj-lane { position: relative; height: 30px; border-bottom: 1px solid var(--border-2); }
+.adj-lane.first { border-top: 2px solid var(--proj); }
+.adj-lab {
+  position: absolute; left: 0; top: 0; width: 110px; height: 100%; padding: 0 6px;
+  font-size: 11px; font-weight: 700; background: var(--panel-2); border-right: 1px solid var(--border-2);
+  display: flex; align-items: center; z-index: 2; box-shadow: inset 3px 0 0 var(--proj);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.adj-bar {
+  position: absolute; top: 6px; height: 18px; border-radius: 3px; background: var(--proj); opacity: .82;
+  color: #fff; font-size: 10.5px; line-height: 18px; padding: 0 6px; white-space: nowrap; overflow: visible;
+  cursor: ew-resize; user-select: none; touch-action: none;
+}
+.adj-bar .bt { overflow: hidden; text-overflow: ellipsis; display: block; }
+.adj-bar.sel { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+.adj-bar.kind-milestone { background: var(--ms); }
+.adj-bar.kind-buffer { background: repeating-linear-gradient(45deg, var(--buffer), var(--buffer) 3px, var(--buffer-bg) 3px, var(--buffer-bg) 6px); color: var(--text); }
+.adj-bar .others { opacity: .8; margin-left: 4px; font-size: 9.5px; }
+.adj-delta {
+  position: absolute; top: -9px; right: -3px; font-size: 9.5px; line-height: 12px; padding: 0 3px;
+  background: var(--mod-bg); color: var(--mod); border: 1px solid var(--mod); border-radius: 3px;
+}
+.adj-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cc); opacity: .35; }
+.adj-right { border-left: 1px solid var(--border-2); padding: 10px 12px; overflow-y: auto; font-size: 12px; }
+.adj-right h4, .adj-left h4 { margin: 0 0 6px; font-size: 12px; }
+.adj-kv { display: grid; grid-template-columns: 58px 1fr; gap: 4px 6px; font-size: 11.5px; align-items: center; }
+.adj-kv .k { color: var(--text-faint); }
+.adj-kv input[type=date] { font: inherit; font-size: 11.5px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); width: 100%; }
+.adj-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.adj-actions select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--text); width: 100%; }
+.adj-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 0 0 auto; }
+.adj-changes { font-size: 11.5px; height: 118px; overflow-y: auto; border: 1px solid var(--border-2); border-radius: 6px; padding: 6px 8px; background: var(--panel-2); }
+.adj-changes .none { color: var(--text-faint); }
+.adj-changes .old { text-decoration: line-through; color: var(--text-faint); }
+.adj-changes .new { color: var(--mod); font-weight: 700; }
+.adj-memo textarea {
+  width: 100%; height: 118px; font: inherit; font-size: 12px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); resize: none;
+}
+.adj-warn { font-size: 11.5px; color: var(--del); font-weight: 600; }
+.adj-moved { background: var(--warn-bg); border: 1px solid var(--warn-br); border-radius: 6px; padding: 6px 8px; font-size: 11.5px; margin-bottom: 8px; }
+
 /* --- ネットワーク図 --------------------------------------- */
 .net-wrap { min-height: 200px; max-height: 58vh; overflow: auto; background: var(--panel); position: relative; }
 .net-node.faded { opacity: .28; filter: saturate(.3); }
@@ -645,6 +696,7 @@ kbd {
     <button data-groupby="person" title="担当者ごとに、その人の全プロジェクトの作業を日程順に並べます">担当者別</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
     <button id="btnPeople" title="表示する担当者を選びます" hidden>担当者 ▾</button>
+    <button id="btnAdjust" class="adjust" title="選んだ人に特化して、試して・決めて・記録する">調整パネル…</button>
     <span class="tb-sep"></span>
     <span class="hint">比率</span>
     <button data-ratio="0.72" title="表を広く">表</button>
@@ -721,6 +773,7 @@ kbd {
     <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
     <button id="netWho" title="選んだ人の作業だけを濃く出します。プロジェクトをまたいで見えます">担当者で強調 ▾</button>
+    <button id="netAdjust" class="adjust" title="選んだ人に特化して、試して・決めて・記録する">調整パネル…</button>
     <span class="tb-sep"></span>
     <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
     <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
@@ -1050,6 +1103,7 @@ const state = {
   hiddenProjects: new Set(),   // 表示しないプロジェクト
   hiddenPeople: new Set(),     // 担当者別で表示しない人（'' は担当なし）
   whoFocus: null,              // ネットワーク図で強調する人
+  adjNotes: {},                // 調整メモ（画面側だけに残る。Q-037）
   cur: { r:0, c:0 },       // カーソル位置（行・列）
   anc: { r:0, c:0 },       // 範囲選択の起点
   editing: null,
@@ -2311,6 +2365,7 @@ function renderAll() {
   document.getElementById('netOutdent').disabled = !real || !sel.parentId;
   document.getElementById('netParent').disabled = !real;
   document.getElementById('netDel').disabled = !real;
+  if (typeof markAdjust === 'function') markAdjust();
   if (typeof placeInput === 'function') placeInput();
   syncScroll();
 }
@@ -2907,6 +2962,271 @@ function openProperties(taskId) {
 }
 
 /* ============================================================
+   14.8 調整パネル — 1 人に特化して「試して、決めて、記録する」(UI-ADJ-*)
+
+   リソースの調整は会議で決まる。会議に要るのは、
+     1. 全員が同じ絵を見ていること（その人の作業を、プロジェクトのレーンに分けて 1 本の時間軸で）
+     2. その場で案を試せること（帯を引きずる・別の人へ振る）
+     3. 「やっぱり無し」ができること（適用を押すまで計画に入らない。破棄で全部戻る）
+     4. 決めたことが残ること（変更の一覧と調整メモ）
+
+   複数人がコメントを書き合う仕組みは、サーバ側の支えが無いと作れない (Q-037)。
+   ここにあるのは「その場で決める」ための道具だけ。
+   ============================================================ */
+function openAdjust(who) {
+  closeModal(); closePop();
+  const base = snap();                                    // 開いた時点。「破棄」でここへ戻す
+  const baseMap = Object.fromEntries(JSON.parse(base).tasks.map(t => [t.id, t]));
+  pushUndo();                                             // 適用したら、まとめて 1 回の操作として戻せる
+  let sel = null;
+  const mine = () => tasks.filter(t => inView(t) && !isGroup(t) && (t.assignees || []).includes(who));
+
+  // 時間軸の範囲は開いたときに決めて固定する。動かすたびに伸び縮みすると狙いが定まらない
+  const mine0 = mine();
+  let A = Math.min(...mine0.map(t => d2n(t.start)).filter(n => !isNaN(n))) - 10 * DAY;
+  let B = Math.max(...mine0.map(t => d2n(t.finish)).filter(n => !isNaN(n))) + 10 * DAY;
+  if (!isFinite(A)) { A = d2n(TODAY) - 14 * DAY; B = d2n(TODAY) + 28 * DAY; }
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal adj" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2>${esc(who)} の調整</h2><span class="hint" id="adjSub"></span>
+      <span class="spacer"></span>
+      <span class="hint">帯を横に引きずって日程を試す ／ 帯を選んで、右で別の人へ</span>
+    </div>
+    <div class="modal-body adj-body">
+      <div class="adj-left">
+        <div class="adj-tl" id="adjTl"></div>
+        <div class="adj-bottom">
+          <div><h4>この調整での変更</h4><div class="adj-changes" id="adjChanges"></div></div>
+          <div class="adj-memo"><h4>調整メモ <span class="hint" style="font-weight:400">— 画面側だけに残ります (Q-037)</span></h4>
+            <textarea id="adjMemo" placeholder="決めたこと・持ち越し・誰に確認するか">${esc(state.adjNotes[who] || '')}</textarea></div>
+        </div>
+      </div>
+      <div class="adj-right" id="adjRight"></div>
+    </div>
+    <div class="modal-foot">
+      <span class="hint">「適用」を押すまで、計画には入りません</span>
+      <span class="adj-warn" id="adjNotice"></span>
+      <span class="spacer"></span>
+      <button data-act="discard">破棄（開いたときの状態へ戻す）</button>
+      <button class="primary" data-act="apply">適用</button>
+    </div>
+  </div>`;
+  document.getElementById('modalLayer').appendChild(back);
+  const q = sel => back.querySelector(sel);
+  const tl = q('#adjTl');
+  let dayW = 8, LAB = 110;
+  const x = n => LAB + Math.round((n - A) / DAY * dayW);
+
+  const renderTl = () => {
+    const ts = mine();
+    // 範囲の外へ出たら、そのときだけ広げる
+    ts.forEach(t => { const s = d2n(t.start), f = d2n(t.finish);
+      if (s < A + 2 * DAY) A = s - 10 * DAY; if (f > B - 2 * DAY) B = f + 10 * DAY; });
+    const W = Math.max(320, tl.clientWidth - LAB - 2);
+    dayW = W / ((B - A) / DAY);
+    const sub = q('#adjSub');
+    const projs = [...new Set(ts.map(t => t.projectId))].map(projName);
+    sub.textContent = ts.length ? `${ts.length} 件 ・ ${projs.join(' / ')}` : '作業なし';
+    if (!ts.length) { tl.innerHTML = '<p class="none" style="padding:24px">この人の作業はありません（すべて別の人へ移しました）</p>'; return; }
+
+    // 目盛り: 週（月曜）。詰まっていたら月
+    let axis = '<div class="adj-axis">';
+    const weekly = dayW * 7 >= 30;
+    if (weekly) {
+      let w0 = A; while (new Date(w0).getUTCDay() !== 1) w0 += DAY;
+      for (let t = w0; t <= B; t += 7 * DAY) axis += `<div class="adj-tick" style="left:${x(t)}px">${fmtMD(t)}</div>`;
+    } else {
+      let m = Date.UTC(new Date(A).getUTCFullYear(), new Date(A).getUTCMonth(), 1);
+      while (m <= B) { const d = new Date(m); if (m >= A) axis += `<div class="adj-tick" style="left:${x(m)}px">${d.getUTCMonth()+1}月</div>`;
+        m = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); }
+    }
+    axis += '</div>';
+
+    const today = `<div class="adj-today" style="left:${x(d2n(TODAY))}px"></div>`;
+    const bar = t => {
+      const s = d2n(t.start), f = d2n(t.finish);
+      const left = x(s), w = Math.max(6, x(f + DAY) - left);
+      const b0 = baseMap[t.id];
+      const d = b0 && b0.start ? Math.round((s - d2n(b0.start)) / DAY) : 0;
+      const others = (t.assignees || []).filter(n => n !== who);
+      return `<div class="adj-bar kind-${t.kind}${t.id === sel ? ' sel' : ''}" data-adj="${t.id}" style="left:${left}px;width:${w}px"
+        title="${esc(t.name)} ${t.start} 〜 ${t.finish}${d ? `（${d > 0 ? '+' : ''}${d} 日）` : ''}">
+        <span class="bt">${esc(t.name)}${others.length ? `<span class="others">+${esc(others.join('、'))}</span>` : ''}</span>
+        ${d ? `<span class="adj-delta">${d > 0 ? '+' : ''}${d}d</span>` : ''}</div>`;
+    };
+    // プロジェクトごとのレーン。同じプロジェクトで重なるものは下の段へ
+    let h = axis;
+    visibleProjects().forEach(p => {
+      const ps = ts.filter(t => t.projectId === p.id).sort((a, b) => d2n(a.start) - d2n(b.start));
+      if (!ps.length) return;
+      const lanes = [];
+      ps.forEach(t => {
+        const s = d2n(t.start);
+        let L = lanes.find(l => l.end < s);
+        if (!L) { L = { end: -Infinity, items: [] }; lanes.push(L); }
+        L.items.push(t); L.end = d2n(t.finish);
+      });
+      lanes.forEach((L, i) => {
+        h += `<div class="adj-lane${i === 0 ? ' first' : ''}" style="--proj:${p.color}">
+          <div class="adj-lab" title="${esc(p.name)}">${i === 0 ? esc(p.name) : ''}</div>${today}${L.items.map(bar).join('')}</div>`;
+      });
+    });
+    tl.innerHTML = h;
+  };
+
+  const renderRight = () => {
+    const r = q('#adjRight');
+    const t = sel && byId(sel);
+    if (!t) { r.innerHTML = '<p class="none">帯を選ぶと、ここに詳しく出ます。</p>'; return; }
+    const preds = deps.filter(d => d.to === t.id).map(d => nameOf(d.from));
+    const succs = deps.filter(d => d.from === t.id).map(d => nameOf(d.to));
+    const others = (t.assignees || []).filter(n => n !== who);
+    const isMine = (t.assignees || []).includes(who);
+    const people = allPeople().filter(n => n !== who && !(t.assignees || []).includes(n));
+    r.innerHTML = `
+      ${isMine ? '' : `<div class="adj-moved">この作業は ${esc((t.assignees || []).join('、') || '担当なし')} へ移しました。${esc(who)} の欄からは消えます。</div>`}
+      <h4>${esc(t.name)} <span class="hint">${esc(t.id)}</span></h4>
+      <div class="adj-kv">
+        <span class="k">プロジェクト</span><span><span class="proj-chip"><i style="background:${(PROJ[t.projectId]||{}).color}"></i>${esc(projName(t.projectId))}</span></span>
+        <span class="k">種別</span><span>${KIND_LABEL[t.kind]}</span>
+        <span class="k">期間</span><span>${t.duration}d</span>
+        <span class="k">着手日</span><span><input type="date" data-adjstart value="${esc(t.start)}"${readOnly(t,'start') ? ' disabled' : ''}></span>
+        <span class="k">完了日</span><span>${esc(t.finish)}</span>
+        <span class="k">先行</span><span>${preds.map(esc).join('、') || '—'}</span>
+        <span class="k">後続</span><span>${succs.map(esc).join('、') || '—'}</span>
+        <span class="k">一緒に</span><span>${others.map(esc).join('、') || '—'}</span>
+      </div>
+      ${succs.length ? '<p class="hint" style="margin:8px 0 0">後続の日程は、サーバ側の再計算で決まります（ここでは動きません）</p>' : ''}
+      ${isMine ? `<div class="adj-actions">
+        <select data-adjto><option value="">別の人へ移す…</option>${people.map(n => `<option>${esc(n)}</option>`).join('')}</select>
+        <button data-adjadd>${esc(who)} は残したまま、人を加える…</button>
+        <button data-adjdrop>${esc(who)} の担当から外す</button>
+      </div>` : ''}`;
+  };
+
+  const renderChanges = () => {
+    const items = [];
+    tasks.forEach(t => {
+      const b = baseMap[t.id]; if (!b) return;
+      ['start', 'duration', 'assignees'].forEach(k => {
+        if (String(b[k] ?? '') !== String(t[k] ?? ''))
+          items.push(`<div><b>${esc(t.name)}</b> ${F[k].label}
+            <span class="old">${esc(diffShow(k, b[k])) || '（空）'}</span> → <span class="new">${esc(diffShow(k, t[k])) || '（空）'}</span></div>`);
+      });
+    });
+    q('#adjChanges').innerHTML = items.length ? items.join('') : '<div class="none">まだ何も変えていません。帯を引きずるか、別の人へ移すと、ここに残ります。</div>';
+    q('#adjNotice').textContent = '';
+  };
+  const renderAllAdj = () => { renderTl(); renderRight(); renderChanges(); };
+
+  // --- 帯を引きずって着手日を動かす (UI-ADJ-02)
+  tl.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-adj]'); if (!b) return;
+    e.preventDefault();
+    const t = byId(b.dataset.adj); if (!t) return;
+    sel = t.id; renderTl(); renderRight();
+    if (readOnly(t, 'start')) return;
+    const sx = e.clientX, s0 = d2n(t.start);
+    let moved = false;
+    const move = ev => {
+      if (!moved && Math.abs(ev.clientX - sx) < 3) return;
+      moved = true;
+      const ns = n2s(s0 + Math.round((ev.clientX - sx) / dayW) * DAY);
+      if (ns !== t.start) { setVal(t, 'start', ns); renderTl(); renderRight(); }
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+      renderChanges();
+    };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  });
+
+  // --- 右側の操作（別の人へ / 加える / 外す / 日付）
+  q('#adjRight').addEventListener('change', e => {
+    const t = sel && byId(sel); if (!t) return;
+    if (e.target.matches('[data-adjstart]')) { setVal(t, 'start', e.target.value); renderAllAdj(); }
+    if (e.target.matches('[data-adjto]') && e.target.value) {
+      t.assignees = (t.assignees || []).filter(n => n !== who).concat([e.target.value]);   // 移す (UI-ADJ-03)
+      renderAllAdj();
+    }
+  });
+  q('#adjRight').addEventListener('click', e => {
+    const t = sel && byId(sel); if (!t) return;
+    if (e.target.closest('[data-adjdrop]')) { t.assignees = (t.assignees || []).filter(n => n !== who); renderAllAdj(); }
+    if (e.target.closest('[data-adjadd]')) {
+      const el = e.target.closest('[data-adjadd]');
+      const cands = allPeople().filter(n => !(t.assignees || []).includes(n));
+      openPickPerson(el, cands, n => { t.assignees = (t.assignees || []).concat([n]); renderAllAdj(); }, '加える人');
+    }
+  });
+  q('#adjMemo').addEventListener('input', e => { state.adjNotes[who] = e.target.value; });
+
+  // --- 適用 / 破棄 (UI-ADJ-04)
+  const changed = () => snap() !== base;
+  const discard = () => { apply(base); undoStack.pop(); closeModal(); renderAll(); };
+  const applyAll = () => { if (!changed()) undoStack.pop(); closeModal(); renderAll(); };
+  const tryClose = () => {
+    if (!changed()) { discard(); return; }
+    q('#adjNotice').textContent = '変更があります。「適用」か「破棄」を選んでください';
+  };
+  back.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]');
+    if (act) { act.dataset.act === 'apply' ? applyAll() : discard(); return; }
+    if (e.target === back) tryClose();
+  });
+  back.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tryClose(); }
+  });
+
+  renderAllAdj();
+  q('#adjMemo').focus({ preventScroll: true });
+}
+
+// 人を 1 人選ぶ小さな一覧（複数人のタスクから調整パネルを開くときなどに使う）
+function openPickPerson(anchorEl, names, cb, title) {
+  closePop();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.style.zIndex = 120;   // ダイアログの上に出す
+  pop.innerHTML = `<div class="pop-head">${esc(title || '誰の調整パネルを開きますか')}</div><div class="pop-body">` +
+    (names.length ? names.map(n => `<div class="pop-item" data-pick="${esc(n)}">${esc(n)}</div>`).join('')
+                  : '<div class="pop-empty">候補がありません</div>') + '</div>';
+  document.getElementById('popLayer').appendChild(pop);
+  placePop(pop, anchorEl);
+  pop.addEventListener('click', e => {
+    const it = e.target.closest('[data-pick]'); if (!it) return;
+    closePop(); cb(it.dataset.pick);
+  });
+}
+
+// いま選んでいるものから「誰の調整か」を決める
+function adjustCandidates() {
+  if (state.screen === 'net' && state.whoFocus) return [state.whoFocus];
+  const r = rows()[state.cur.r];
+  if (!r) return [];
+  if (r._synthetic) return r._who ? [r._who] : [];
+  return (r.assignees || []).slice();
+}
+function openAdjustFrom(anchorEl) {
+  const names = adjustCandidates();
+  if (!names.length) return;
+  if (names.length === 1) openAdjust(names[0]);
+  else openPickPerson(anchorEl, names, openAdjust);
+}
+function markAdjust() {
+  const names = adjustCandidates();
+  document.querySelectorAll('button.adjust').forEach(b => {
+    b.disabled = !names.length;
+    b.textContent = names.length === 1 ? `「${names[0]}」の調整パネル…` : '調整パネル…';
+    b.title = names.length ? '選んだ人に特化して、試して・決めて・記録する'
+                           : '担当のある行か、担当者のまとめ行を選ぶと開けます';
+  });
+}
+
+/* ============================================================
    15. 接続の UI（ガントとネットワーク図で共通の部品）
 
    ・ハンドルをクリック → 検索付きの一覧から選ぶ
@@ -3202,7 +3522,7 @@ function openWhoFocus(anchorEl) {
   pop.addEventListener('click', e => {
     const it = e.target.closest('[data-who]'); if (!it) return;
     state.whoFocus = it.dataset.who || null;
-    closePop(); markWhoFocus(); renderNet();
+    closePop(); markWhoFocus(); markAdjust(); renderNet();
   });
 }
 function markWhoFocus() {
@@ -3277,7 +3597,12 @@ document.getElementById('grid').addEventListener('pointerdown', e => {
     }
     renderAll(); placeInput(); focusGrid();
     e.preventDefault();
-    if (doubleTap('rn:' + r)) { const t = rows()[r]; if (t) openProperties(t.id); return; }
+    if (doubleTap('rn:' + r)) {
+      const t = rows()[r];
+      if (t && t._synthetic && t._who) openAdjust(t._who);      // 担当者のまとめ行 → 調整パネル
+      else if (t) openProperties(t.id);
+      return;
+    }
     startRowDrag(r, e);
     return;
   }
@@ -3583,8 +3908,9 @@ function markGroupBy() {
 }
 document.querySelectorAll('.pfilter').forEach(b => b.onclick = e => openProjects(e.currentTarget));
 document.getElementById('btnPeople').onclick = e => openPeople(e.currentTarget);
+document.querySelectorAll('button.adjust').forEach(b => b.onclick = e => openAdjustFrom(e.currentTarget));
 document.getElementById('netWho').onclick = e => {
-  if (state.whoFocus) { state.whoFocus = null; markWhoFocus(); renderNet(); }   // 押し直しで解除
+  if (state.whoFocus) { state.whoFocus = null; markWhoFocus(); markAdjust(); renderNet(); }   // 押し直しで解除
   else openWhoFocus(e.currentTarget);
 };
 document.getElementById('btnCols').onclick   = e => openColumns(e.currentTarget);
@@ -3688,13 +4014,14 @@ document.addEventListener('keydown', e => {
     const r = rows()[state.cur.r];
     if (r) { e.preventDefault(); deleteTask(r.id); }
   }
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape' && !document.querySelector('.modal.adj')) closeModal();   // 調整パネルは自分で閉じ方を決める
 });
 
 // ポップアップの外側をクリックしたら閉じる
 document.addEventListener('mousedown', e => {
   if (!e.target.closest('.pop') && !e.target.closest('#btnCols') && !e.target.closest('#btnPeople')
-      && !e.target.closest('#netWho') && !e.target.closest('.pfilter') && !e.target.closest('[data-handle]')
+      && !e.target.closest('#netWho') && !e.target.closest('.pfilter') && !e.target.closest('button.adjust')
+      && !e.target.closest('[data-adjadd]') && !e.target.closest('[data-handle]')
       && !e.target.closest('[data-nethandle]')) closePop();
 }, true);
 

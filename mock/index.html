@@ -362,6 +362,22 @@ table.grid tr.headrow .hsub { color: var(--text-faint); font-weight: 400; font-s
 .headspan::before { left: 0; }
 .headspan::after  { right: 0; }
 
+/* 担当者別のまとめ行に、その人の作業の帯を重ねて描く。
+   同じ帯を 1 行に描いているだけで、数値も判定も足していない。
+   色はプロジェクト。重なりは重なって見える。 */
+.headbar { position: absolute; top: 8px; height: 10px; border-radius: 2px; opacity: .42; }
+.headbar.cur { opacity: .9; outline: 1.5px solid var(--accent); }
+
+/* 選んだタスクが別の人の欄にも出ているとき（複数人のタスク） */
+table.grid tr.twin td.cell { background: var(--accent-bg); }
+.twin-tag { font-size: 10px; color: var(--accent); margin-left: 6px; white-space: nowrap; }
+.grow.twin { background: var(--accent-bg); }
+
+/* 担当の付け替え（担当者別で行を別の人の欄へ落とす） */
+table.grid tr.assign-target td { box-shadow: inset 0 0 0 1px var(--add); }
+table.grid tr.assign-target.headrow td { background: var(--add-bg); }
+table.grid tr.assign-ng td { box-shadow: inset 0 0 0 1px var(--del); }
+
 /* プロジェクトの凡例と絞り込み */
 .proj-chip { display: inline-flex; align-items: center; gap: 5px; }
 .proj-chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -628,6 +644,7 @@ kbd {
     <button data-groupby="project" title="プロジェクトごとに、いつもの階層で並べます">プロジェクト別</button>
     <button data-groupby="person" title="担当者ごとに、その人の全プロジェクトの作業を日程順に並べます">担当者別</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
+    <button id="btnPeople" title="表示する担当者を選びます" hidden>担当者 ▾</button>
     <span class="tb-sep"></span>
     <span class="hint">比率</span>
     <button data-ratio="0.72" title="表を広く">表</button>
@@ -703,6 +720,7 @@ kbd {
     <button id="netFit">全体表示</button>
     <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
+    <button id="netWho" title="選んだ人の作業だけを濃く出します。プロジェクトをまたいで見えます">担当者で強調 ▾</button>
     <span class="tb-sep"></span>
     <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
     <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
@@ -1026,9 +1044,12 @@ const UNITS = {
 };
 const state = {
   screen: 'gantt',
-  cols: ['name','kind','duration','start','finish','preds','assignees','phase','progress','wbsCode'],
+  // 担当はタスク名の隣に置く。リソースの調整で最初に見る列だから
+  cols: ['name','assignees','kind','duration','start','finish','preds','phase','progress','wbsCode'],
   groupBy: 'project',          // project = プロジェクト別 / person = 担当者別
   hiddenProjects: new Set(),   // 表示しないプロジェクト
+  hiddenPeople: new Set(),     // 担当者別で表示しない人（'' は担当なし）
+  whoFocus: null,              // ネットワーク図で強調する人
   cur: { r:0, c:0 },       // カーソル位置（行・列）
   anc: { r:0, c:0 },       // 範囲選択の起点
   editing: null,
@@ -1175,10 +1196,12 @@ function rowsByPerson() {
   const names = [...new Set(leaves.flatMap(t => t.assignees || []))]
     .sort((a, b) => (firstStart(a) - firstStart(b)) || a.localeCompare(b, 'ja'));
   const out = [];
-  const put = (id, label, mine) => {
+  const put = (id, label, mine, who) => {
     if (!mine.length) return;
+    if (state.hiddenPeople.has(who)) return;
     mine = mine.slice().sort((a, b) => (d2n(a.start) || 0) - (d2n(b.start) || 0));
     const head = headRow(id, label, null, mine, null, null);
+    head._who = who;                     // '' は担当なし
     head._sub = mine.length + ' 件';
     head._range = fmtSpan(head);
     out.push(head);
@@ -1186,9 +1209,19 @@ function rowsByPerson() {
     mine.forEach(t => { t._depth = 1; out.push(t); });
   };
   names.forEach(nm => put(SYNTH + 'who:' + nm, nm,
-    leaves.filter(t => (t.assignees || []).includes(nm))));
-  put(SYNTH + 'who:', '担当なし', leaves.filter(t => !(t.assignees || []).length));
+    leaves.filter(t => (t.assignees || []).includes(nm)), nm));
+  put(SYNTH + 'who:', '担当なし', leaves.filter(t => !(t.assignees || []).length), '');
   return out;
+}
+// 担当者別に出てくる人の一覧（絞り込みの選択肢に使う）
+function allPeople() {
+  const leaves = tasks.filter(t => inView(t) && !isGroup(t));
+  return [...new Set(leaves.flatMap(t => t.assignees || []))].sort((a, b) => a.localeCompare(b, 'ja'));
+}
+// 担当者別で、その行がどの人の欄にあるか（直前のまとめ行を見る）
+function whoOfRow(rs, r) {
+  for (let i = r; i >= 0; i--) if (rs[i] && rs[i]._synthetic) return rs[i]._who ?? null;
+  return null;
 }
 
 function rows() { return personMode() ? rowsByPerson() : rowsByProject(); }
@@ -1373,12 +1406,16 @@ function renderGrid() {
     `<th class="spacer-row" colspan="${cols.length}" style="font-weight:400;color:var(--text-faint)">マイルストン帯（右側に常時表示）</th></tr></thead>`;
 
   const cs = state.diffMode === 'off' ? null : changeSet();
+  const curRow = rs[state.cur.r];
+  const twinId = personMode() && curRow && !isSynth(curRow) ? curRow.id : null;
 
   h += '<tbody>';
   rs.forEach((t, r) => {
     const cls = ['kind-' + t.kind];
     if (isSynth(t)) cls.push('headrow');
     else if (isGroup(t)) cls.push('grouprow');
+    // 複数人のタスクは他の人の欄にも出ている。選んだらそちらにも印を付ける
+    if (twinId && t.id === twinId && r !== state.cur.r) cls.push('twin');
     if (r >= lo && r <= hi) cls.push('rowsel');
     if (cs && !isSynth(t)) cls.push(cs.ids.has(t.id) ? 'rowchg' : 'rowfade');
     // プロジェクトの色は行の左端の帯で示す（帯や枠の色は別の意味で使っている）
@@ -1410,7 +1447,8 @@ function renderGrid() {
           ? `<span class="caret" data-caret="${t.id}">${state.collapsed.has(t.id) ? '▸' : '▾'}</span>`
           : '<span class="caret"></span>';
         const dot = CRITICAL.has(t.id) ? '<span class="cc-dot"></span>' : '';
-        const sub = t._sub ? `<span class="hsub">${t._sub}</span>` : '';
+        const sub = t._sub ? `<span class="hsub">${t._sub}</span>`
+                  : (cls.includes('twin') ? '<span class="twin-tag">同じ作業</span>' : '');
         inner = `<div class="tw" style="padding-left:${pad}px">${caret}${dot}<span style="overflow:hidden;text-overflow:ellipsis">${inner}</span>${sub}</div>`;
       }
       h += `<td class="${cc.join(' ')}" data-r="${r}" data-c="${c}" title="${String(v).replace(/"/g,'')}">${inner}</td>`;
@@ -1567,10 +1605,27 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
 
   // --- 帯
   const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
+  const curRow = list[state.cur.r];
+  const twinId = personMode() && curRow && !curRow._synthetic ? curRow.id : null;
   const bars = list.map((row, r) => {
-    const sel = (r >= lo && r <= hi) ? ' rowsel' : '';
+    const twin = (twinId && row.id === twinId && r !== state.cur.r) ? ' twin' : '';
+    const sel = (r >= lo && r <= hi) ? ' rowsel' : twin;
     const pc = row._color || (PROJ[row.projectId] || {}).color || '';
     const ps = pc ? ` style="--proj:${pc}"` : '';
+    if (row._synthetic && row._who !== undefined) {
+      /* 担当者のまとめ行には、その人の作業の帯をそのまま重ねて描く。
+         畳んだままでも「どの時期に何本重なっているか」が色（プロジェクト）で見える。
+         同じ帯を 1 行に描いているだけで、数値も判定も足していない。 */
+      const bars = withData(ds, () => (row._memberIds || []).map(byId).filter(Boolean).map(t => {
+        const sp = span(t);
+        if (isNaN(sp.s) || isNaN(sp.f)) return '';
+        const col = (PROJ[t.projectId] || {}).color || 'var(--text-faint)';
+        const cur = (!isBefore && curRow && curRow.id === t.id) ? ' cur' : '';
+        return `<div class="headbar${cur}" style="left:${x(sp.s)}px;width:${Math.max(4, x(sp.f + DAY) - x(sp.s))}px;background:${col}"
+                  title="${esc(t.name)} — ${projName(t.projectId)} ${t.start} 〜 ${t.finish}"></div>`;
+      }).join(''));
+      return `<div class="grow headrow${sel}" data-r="${r}" data-id="${row.id}">${bars}</div>`;
+    }
     if (row._synthetic) {
       /* まとめ行は「いつからいつまで」だけを出す。
          「誰がいつ何 % 埋まっている」は出さない — 工数や割当率が
@@ -2034,6 +2089,8 @@ function drawNet(n, ds, cs, isBefore) {
     related.add(curId);
     ed.forEach(d => { if (d.from === curId) related.add(d.to); if (d.to === curId) related.add(d.from); });
   }
+  // 「担当者で強調」— その人の作業でないものを薄くする
+  const hasWho = t => !!state.whoFocus && (t.assignees || []).includes(state.whoFocus);
   // クリティカルチェーンが中を通る枠は、枠も強調する
   const ccBox = id => !isProjBox(id) && (CRITICAL.has(id) ||
     (pos[id] && pos[id].container && withData(ds, () => descendants(id).some(x => CRITICAL.has(x.id)))));
@@ -2047,6 +2104,7 @@ function drawNet(n, ds, cs, isBefore) {
     if (!pr && ccBox(b.id)) cls.push('cc');
     if (b.id === curId) cls.push('sel');
     if (!pr && cs && !cs.ids.has(b.id)) cls.push('faded');
+    if (state.whoFocus && !pr && !withData(ds, () => descendants(b.id).some(hasWho))) cls.push('faded');
     const kids = pr
       ? withData(ds, () => tasks.filter(t => t.projectId === pr.id).length)
       : withData(ds, () => childrenOf(b.id).length);
@@ -2069,6 +2127,7 @@ function drawNet(n, ds, cs, isBefore) {
     const on = ccBox(d.from) && ccBox(d.to);
     let dim = curId && !(related.has(d.from) && related.has(d.to)) ? ' dim' : '';
     if (cs && !cs.deps.has(d.srcFrom + '→' + d.srcTo)) dim = ' dim';
+    if (state.whoFocus && !(withData(ds, () => hasWho(byId(d.srcFrom) || {}) && hasWho(byId(d.srcTo) || {})))) dim = ' dim';
     const path = edgePath(a, b, pos, bottomOf);
     return `<path class="net-edge${on ? ' cc' : ''}${dim}" d="${path}" marker-end="url(#${on ? 'arrCC' : 'arr'})"/>`;
   }).join('');
@@ -2083,6 +2142,7 @@ function drawNet(n, ds, cs, isBefore) {
     if (CRITICAL.has(b.id)) cls.push('cc');
     if (b.id === curId) cls.push('sel');
     if (cs && !cs.ids.has(b.id)) cls.push('faded');
+    if (state.whoFocus && !hasWho(t) && !(isGroup(t) && withData(ds, () => descendants(t.id).some(hasWho)))) cls.push('faded');
     if (b.manual) cls.push('moved');
     if (netFoldable(t)) cls.push('collapsed-group');
     const pr = t._project;
@@ -2303,7 +2363,12 @@ function openSelect() {
   el.style.height = b.height + 'px';
   host.appendChild(el);
   el.focus();
+  // 閉じるのは 1 回だけ。Enter で閉じると、取り除く途中で blur が飛んできて
+  // もう一度ここに入り、取り除き済みの要素をまた取り除こうとして落ちる。
+  let closed = false;
   const done = ok => {
+    if (closed) return;
+    closed = true;
     const v = el.value; el.remove();
     if (ok) { pushUndo(); setVal(byId(t.id), key, v); }
     renderAll(); focusGrid();
@@ -2523,11 +2588,94 @@ function outdent() {
    ============================================================ */
 const INDENT_PX = 14;   // 1 段あたりの横幅。表の描画と合わせる
 
+/* 担当者別で行を掴んだら「担当の付け替え」(UI-GANTT-28)。
+
+   リソースの調整とは、結局「この作業を誰に持ってもらうか」を決めること。
+   担当者別の表で、行を別の人の欄へ落とす — それがそのまま担当の変更になる。
+   セルで「佐藤」を「山本」に打ち直すのと同じ結果だが、
+   表を見ながら動かせるほうが、調整の場では圧倒的に速い。
+
+   何が起きるかは札に言葉で出す（UI-NET-17 と同じ考え方）。 */
+function startAssignDrag(startRow, ev) {
+  ev.preventDefault();
+  const rs = rows();
+  if (isSynth(rs[startRow])) return;                 // まとめ行そのものは動かせない
+  const fromWho = whoOfRow(rs, startRow);            // '' = 担当なし
+
+  // 選択範囲にかかっていれば範囲ごと（同じ人の欄の実タスクだけ）
+  const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
+  const inSel = startRow >= lo && startRow <= hi;
+  const moving = [];
+  for (let r = (inSel ? lo : startRow); r <= (inSel ? hi : startRow); r++) {
+    const t = rs[r];
+    if (t && !isSynth(t) && whoOfRow(rs, r) === fromWho && !moving.includes(t)) moving.push(t);
+  }
+  if (!moving.length) return;
+
+  const tag = document.getElementById('dragTag');
+  const sx = ev.clientX, sy = ev.clientY;
+  let target, started = false;   // target: { who, ok, text, cls }
+
+  const clearMarks = () => document.querySelectorAll('#grid tr.assign-target, #grid tr.assign-ng')
+    .forEach(tr => tr.classList.remove('assign-target', 'assign-ng'));
+
+  const move = e => {
+    if (!started && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
+    started = true;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const tr = el && el.closest('#grid tbody tr');
+    clearMarks();
+    if (!tr) { target = null; tag.hidden = true; return; }
+    const who = whoOfRow(rs, Number(tr.dataset.r));
+    const label = who === '' ? '担当なし' : who;
+    const names = moving.length === 1 ? `「${moving[0].name}」` : `${moving.length} 件`;
+    let ok = true, text, cls = '';
+    if (who === null) { target = null; tag.hidden = true; return; }
+    if (who === fromWho) { text = '同じ欄です（並びは日程順なので変わりません）'; cls = 'same'; }
+    else if (who !== '' && moving.every(t => (t.assignees || []).includes(who))) {
+      ok = false; text = `${names} は、すでに「${who}」の担当です`; cls = 'ng';
+    }
+    else if (who === '') text = `${names} を「${fromWho}」の担当から外す`;
+    else if (fromWho === '') text = `${names} を「${who}」の担当にする`;
+    else text = `${names} の担当を「${fromWho}」→「${who}」へ移す`;
+    target = { who, ok, text, cls };
+    // 落とし先の欄に印を付ける
+    const wid = SYNTH + 'who:' + who;
+    let on = false;
+    document.querySelectorAll('#grid tbody tr').forEach(row => {
+      const t = rs[Number(row.dataset.r)];
+      if (t && t._synthetic) on = (t.id === wid);
+      if (on) row.classList.add(ok ? 'assign-target' : 'assign-ng');
+    });
+    tag.hidden = false; tag.className = cls; tag.textContent = text;
+    tag.style.left = (e.clientX + 16) + 'px'; tag.style.top = (e.clientY + 18) + 'px';
+  };
+  const up = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    clearMarks(); tag.hidden = true;
+    if (!started || !target || !target.ok || target.who === fromWho) return;
+    pushUndo();
+    moving.forEach(t => {
+      const a = (t.assignees || []).filter(n => n !== fromWho);   // 元の人から外す
+      if (target.who !== '' && !a.includes(target.who)) a.push(target.who);
+      t.assignees = a;
+    });
+    // 落とした先の欄で、動かしたタスクを選び直す
+    const rs2 = rows();
+    const i = rs2.findIndex((t, r) => t.id === moving[0].id && whoOfRow(rs2, r) === target.who);
+    if (i >= 0) state.cur.r = state.anc.r = i;
+    renderAll();
+  };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
 function startRowDrag(startRow, ev) {
   ev.preventDefault();
   const rs = rows();
-  // 担当者別では、人の下の並びに意味がない。まとめ行そのものも動かせない。
-  if (personMode() || isSynth(rs[startRow])) return;
+  if (personMode()) { startAssignDrag(startRow, ev); return; }   // 担当者別では担当の付け替え
+  if (isSynth(rs[startRow])) return;                               // まとめ行そのものは動かせない
 
   // 選択範囲にかかっていれば範囲ごと、そうでなければその行だけ動かす
   const lo = Math.min(state.cur.r, state.anc.r), hi = Math.max(state.cur.r, state.anc.r);
@@ -3012,6 +3160,57 @@ function openProjects(anchorEl) {
   });
 }
 
+// 担当者別で、表示する人を選ぶ (UI-GANTT-29)。プロジェクトの絞り込みと同じ作り
+function openPeople(anchorEl) {
+  closePop();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  const people = allPeople().map(n => [n, n]).concat([['', '担当なし']]);
+  const count = who => tasks.filter(t => inView(t) && !isGroup(t)
+    && (who === '' ? !(t.assignees || []).length : (t.assignees || []).includes(who))).length;
+  const draw = () => {
+    pop.innerHTML = `<div class="pop-head">表示する担当者</div><div class="pop-body">` +
+      people.map(([who, label]) => `<label class="pop-item"><input type="checkbox" data-who="${esc(who)}"
+        ${state.hiddenPeople.has(who) ? '' : 'checked'}><span>${esc(label)}</span>
+        <span class="sub">${count(who)}</span></label>`).join('') +
+      `</div><div class="pop-foot">隠すだけです。担当は変わりません</div>`;
+  };
+  draw();
+  document.getElementById('popLayer').appendChild(pop);
+  placePop(pop, anchorEl);
+  pop.addEventListener('change', e => {
+    const who = e.target.dataset.who; if (who === undefined) return;
+    e.target.checked ? state.hiddenPeople.delete(who) : state.hiddenPeople.add(who);
+    if (!rows().length) { state.hiddenPeople.delete(who); draw(); return; }   // 全部は隠せない
+    state.cur.r = state.anc.r = Math.min(state.cur.r, Math.max(0, rows().length - 1));
+    renderAll();
+  });
+}
+
+// ネットワーク図で「この人の作業だけ濃く」(UI-NET-19)
+function openWhoFocus(anchorEl) {
+  closePop();
+  const pop = document.createElement('div');
+  pop.className = 'pop';
+  pop.innerHTML = `<div class="pop-head">担当者で強調</div><div class="pop-body">` +
+    `<div class="pop-item${state.whoFocus ? '' : ' active'}" data-who="">（強調しない）</div>` +
+    allPeople().map(n => `<div class="pop-item${state.whoFocus === n ? ' active' : ''}" data-who="${esc(n)}">${esc(n)}
+      <span class="sub">${tasks.filter(t => inView(t) && (t.assignees || []).includes(n)).length}</span></div>`).join('') +
+    `</div><div class="pop-foot">その人の作業が、プロジェクトをまたいで浮き上がります</div>`;
+  document.getElementById('popLayer').appendChild(pop);
+  placePop(pop, anchorEl);
+  pop.addEventListener('click', e => {
+    const it = e.target.closest('[data-who]'); if (!it) return;
+    state.whoFocus = it.dataset.who || null;
+    closePop(); markWhoFocus(); renderNet();
+  });
+}
+function markWhoFocus() {
+  const b = document.getElementById('netWho');
+  b.textContent = state.whoFocus ? `「${state.whoFocus}」を強調中 ×` : '担当者で強調 ▾';
+  b.setAttribute('aria-pressed', String(!!state.whoFocus));
+}
+
 // 凡例。どの色がどのプロジェクトかを、両方の画面に出す
 function renderProjLegend() {
   const h = PROJECTS.map(p =>
@@ -3376,12 +3575,18 @@ function markGroupBy() {
     el.title = person ? `担当者別では${what}はできません（プロジェクト別に切り替えてください）`
                       : el.dataset.title0;
   });
+  document.getElementById('btnPeople').hidden = !person;
   document.getElementById('ganttHint').innerHTML = person
     ? '同じ人の作業を、全プロジェクトまとめて日程順に並べています。'
-      + '<b>セルの編集はできます</b>／並べ替え・階層・依存の線はできません'
+      + '<b>行番号を掴んで別の人の欄へ落とすと担当が移ります</b>／セルの編集もできます／並べ替え・階層・依存の線はできません'
     : 'セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層 / 行番号をダブルクリックで全項目';
 }
 document.querySelectorAll('.pfilter').forEach(b => b.onclick = e => openProjects(e.currentTarget));
+document.getElementById('btnPeople').onclick = e => openPeople(e.currentTarget);
+document.getElementById('netWho').onclick = e => {
+  if (state.whoFocus) { state.whoFocus = null; markWhoFocus(); renderNet(); }   // 押し直しで解除
+  else openWhoFocus(e.currentTarget);
+};
 document.getElementById('btnCols').onclick   = e => openColumns(e.currentTarget);
 document.getElementById('btnInsert').onclick = () => { insertRow(); focusGrid(); };
 document.getElementById('btnDelete').onclick = () => { deleteRows(); focusGrid(); };
@@ -3488,7 +3693,8 @@ document.addEventListener('keydown', e => {
 
 // ポップアップの外側をクリックしたら閉じる
 document.addEventListener('mousedown', e => {
-  if (!e.target.closest('.pop') && !e.target.closest('#btnCols') && !e.target.closest('[data-handle]')
+  if (!e.target.closest('.pop') && !e.target.closest('#btnCols') && !e.target.closest('#btnPeople')
+      && !e.target.closest('#netWho') && !e.target.closest('.pfilter') && !e.target.closest('[data-handle]')
       && !e.target.closest('[data-nethandle]')) closePop();
 }, true);
 

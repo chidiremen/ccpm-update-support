@@ -889,7 +889,7 @@ const FIELDS = [
     options:['タスク','マイルストン','バッファ'],
     help:'サーバ側の判定は暫定です（TaskType と期間ゼロから推定）' },
   { key:'duration',label:'期間',       grp:'core', section:'日程', type:'number', w:58, unit:'d',
-    help:'単位は日（サーバ側で換算済み）。変えると完了日も動きます。後続タスクはサーバ側が再計算します' },
+    help:'営業日。土日を飛ばして完了日が決まります（祝日は未対応 Q-041）。後続タスクはサーバ側が再計算します' },
   { key:'start',   label:'着手日',     grp:'core', section:'日程', type:'date',   w:92 },
   { key:'finish',  label:'完了日',     grp:'core', section:'日程', type:'date',   w:92,
     help:'着手日と期間から決まります' },
@@ -898,7 +898,7 @@ const FIELDS = [
   { key:'succs',   label:'後続タスク', grp:'core', section:'日程', type:'link',   w:150,
     readonly:true, help:'先行タスクの裏返しなので、ここでは変えられません' },
   { key:'consumed',label:'バッファ消費', grp:'core', section:'日程', type:'number', w:80,
-    help:'バッファのみ。単位は未確認です (Q-038)' },
+    help:'バッファのみ。単位は日（営業日）' },
   { key:'protects',label:'保護対象',   grp:'core', section:'日程', type:'text',   w:100,
     readonly:true, help:'バッファのみ。守っている相手（DependencyId）' },
   { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%',
@@ -909,7 +909,7 @@ const FIELDS = [
     options: PROJECTS.map(p => p.name),
     help:'色分けと絞り込みに使うため、ツールが意味を理解します。親を変えると親のプロジェクトに揃います' },
   { key:'assignees', label:'リソース',  grp:'core', section:'体制', type:'people', w:130,
-    help:'BM3 の Skill 名です。人の名前ではありません (Q-039)。読点で区切って複数。リソース別の並べ方はこの項目を見ています' },
+    help:'BM3 の Skill 名（資源の種類）。読点で区切って複数。リソース別の並べ方はこの項目を見ています' },
 
   // ---- 素通し項目（ツールは意味を解釈せず、そのまま保存する） ----
   { key:'wbsCode',   label:'WBS 番号',   grp:'pass', section:'管理', type:'text',   w:88,
@@ -1117,6 +1117,15 @@ const d2n = s => s ? Date.parse(s + 'T00:00:00Z') : NaN;
 const n2s = n => new Date(n).toISOString().slice(0,10);
 const fmtMD = n => { const d = new Date(n); return (d.getUTCMonth()+1) + '/' + d.getUTCDate(); };
 
+/* 期間は「営業日」。土日を飛ばして数える。
+   祝日や会社の休業日は、いまのところ情報が無いので飛ばさない (Q-041)。 */
+const isWorkday = n => { const d = new Date(n).getUTCDay(); return d !== 0 && d !== 6; };
+function addWorkdays(startN, days) {        // 着手日を 1 日目と数えて、days 営業日目の日付
+  let n = startN, left = Math.max(1, days);
+  while (!isWorkday(n)) n += DAY;
+  while (left > 1) { n += DAY; if (isWorkday(n)) left--; }
+  return n;
+}
 const byId = id => tasks.find(t => t.id === id);
 const nameOf = id => (byId(id) || {}).name || id;
 const childrenOf = id => tasks.filter(t => t.parentId === id);
@@ -1407,13 +1416,9 @@ function setVal(t, key, raw) {
 
   // 期間を変えたら、自分の帯だけ伸ばす。
   // 後続タスクの日程はサーバ側が計算する想定なので、ここでは触りません。
-  if (key === 'duration' && t.start) {
+  if ((key === 'duration' && t.start) || (key === 'start' && t.duration)) {
     const d = Math.max(0, Number(t.duration) || 0);
-    t.finish = n2s(d2n(t.start) + Math.max(0, d - 1) * DAY);
-  }
-  if (key === 'start' && t.duration) {
-    const d = Math.max(0, Number(t.duration) || 0);
-    t.finish = n2s(d2n(t.start) + Math.max(0, d - 1) * DAY);
+    t.finish = d ? n2s(addWorkdays(d2n(t.start), d)) : t.start;   // 営業日で数える
   }
   if (t.kind === 'milestone') { t.duration = 0; t.finish = t.start; }
 }

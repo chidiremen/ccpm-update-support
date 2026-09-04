@@ -421,7 +421,7 @@ components:
           example: "17"
         duration:
           type: number
-          description: 期間（日）。BM3 の分単位の値を `MinutesPerDay` で換算したもの
+          description: 期間（**営業日**）。BM3 の分単位の値を `MinutesPerDay` で換算したもの。土日を飛ばして数える 🟡 (Q-016 ✅、祝日は Q-041)
           example: 3
         start:
           type: string
@@ -438,8 +438,8 @@ components:
         assignees:
           type: array
           description: |
-            割り当てられた資源の名前。**BM3 の Skill 名であって、人の名前ではない。**
-            複数あり得る (Q-039)
+            割り当てられた資源の名前。**BM3 の Skill 名**（資源の種類）。複数あり得る。
+            リソース調整の対象は Skill でよいと決まった (Q-039 ✅)
           items:
             type: string
           example: ["サウンドPAVCT"]
@@ -466,7 +466,7 @@ components:
           description: プロジェクトの AsOfDate 由来（タスク個別の値ではない）
         consumed:
           type: number
-          description: "`kind=buffer` のときのバッファ消費率。**単位（0〜1 か 0〜100 か）は未確認** (Q-038)"
+          description: "`kind=buffer` のときのバッファ消費。単位は**日** 🟡 (Q-038 ✅)"
         protects:
           type: string
           description: "`kind=buffer` のときの保護対象。現時点は DependencyId"

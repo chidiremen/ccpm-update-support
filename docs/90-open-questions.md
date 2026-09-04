@@ -47,11 +47,18 @@ bash scripts/check-spec.sh
 要素名・属性名・値の形式すべてがこれに依存します。
 
 **分からない間の仮置き**: [`interface/20-data-model.md`](interface/20-data-model.md) に
-想定の構造を書き、[`interface/examples/plan-minimal.xml`](interface/examples/plan-minimal.xml)
+想定の構造を書き、[`interface/examples/portfolio-example.json`](interface/examples/portfolio-example.json)
 にサンプルを置いています。**すべて架空のものです。**
 
 **影響範囲**: データモデルの章の全体、ガントチャート・ネットワーク図の全操作。
 **このリポジトリで最も影響が大きい項目です。**
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** 計画ファイル（XML）そのものは画面側に来ないことが分かった。
+> サーバ側が解析して JSON（`GET /portfolio`）で返す。実物の JSON の例は受領済み。
+> XML の実物はもはや画面側には不要。ただし**実データでの動作確認はまだ**（受領したのは文書のみ）。
 
 ---
 
@@ -77,6 +84,13 @@ bash scripts/check-spec.sh
 **影響範囲**: [`ui/10-screens.md`](ui/10-screens.md) のファイルを開く画面、
 `POST /plans`、`DELETE /plans/{planId}`。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。開く操作は無い。** サーバ側が自分の置き場所（`sourcePath`）の XML を読む。
+> どのプロジェクトを見るかは、ホスト画面から起動クエリ `projectIds` で渡されてくる。
+> `planId` は常に `bm3-portfolio`。ファイルを開く画面（`UI-OPEN-*`）は廃止。
+
 ---
 
 ## Q-003 XML をどういう形で受け渡すのか
@@ -94,6 +108,13 @@ bash scripts/check-spec.sh
 確定したら片方を消せば済むようにしてあります。
 
 **影響範囲**: すべての API の要求と応答の形。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。案 A でも案 B でもなく、サーバ側が XML を JSON に変換して返す。**
+> 画面側は XML の要素名を一切知らなくてよい。`revision` は JSON の一項目として来る。
+> 保存側の形は未実装のため未定（`Q-015`）。
 
 ---
 
@@ -120,6 +141,13 @@ bash scripts/check-spec.sh
 **影響範囲**: `PUT /plans/{planId}`、[`ui/13-diff.md`](ui/13-diff.md) の `UI-DIFF-06`、
 [`interface/23-sequences.md`](interface/23-sequences.md) の流れ 2。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** `GET /portfolio` の応答に `revision` があり、
+> サーバ側の文書に「将来保存 I/F で使用予定」とある。版の照合は**実現できる見込み**。
+> `If-Match` で受け取るかどうかは、保存 I/F が実装されるまで不明。
+
 ---
 
 # 高 — 画面の主要機能に直結する
@@ -141,6 +169,11 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `UI-GANTT-03`、`UI-NET-02`。（b）なら API が 1 つ増えます。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。サーバ側が決める。** 応答の `critical[]` にタスク id が並ぶ。画面側は計算しない。
+
 ---
 
 ## Q-016 日付と期間はどう表現されているか
@@ -160,6 +193,12 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `UI-GANTT-02`、`UI-GANTT-07`、データモデルの章。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** 日付は `YYYY-MM-DD`、期間は**日**（BM3 の分単位の値を `MinutesPerDay` で換算済み）。
+> **暦日か営業日かは依然として不明。** 稼働カレンダーの情報も応答には無い。
+
 ---
 
 ## Q-008 タスクに階層構造はあるか
@@ -173,6 +212,11 @@ bash scripts/check-spec.sh
 **分からない間の仮置き**: `<task>` の入れ子で階層を表す想定です。
 
 **影響範囲**: `UI-GANTT-01`、`UI-NET-06`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。あり。** `parentId`（親の id、最上位は `null`）で表す。深さの上限は不明。
 
 ---
 
@@ -191,6 +235,11 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `UI-GANTT-08`、`UI-NET-01`、データモデルの章。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。終了→開始のみ。** `deps[]` は `from` / `to` だけで、種類も遅延も無い。
+
 ---
 
 ## Q-010 バッファは XML 上どう表現されるか
@@ -207,6 +256,13 @@ bash scripts/check-spec.sh
 専用要素を想定しています。
 
 **影響範囲**: `UI-GANTT-04`、ネットワーク図のバッファ表示。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。** バッファは独立した要素ではなく、`tasks[]` に `kind=buffer` として混ざる（元は BM3 の `MilestoneBuffer`）。
+> `consumed`（消費率）と `protects`（守る相手。現時点は DependencyId）を持つ。
+> **`consumed` の単位が不明** → `Q-038`。プロジェクトバッファ・合流バッファの区別は応答からは分からない。
 
 ---
 
@@ -228,6 +284,11 @@ bash scripts/check-spec.sh
 **影響範囲**: `UI-DIFF-02`、`UI-OPEN-03`、
 [`interface/22-errors.md`](interface/22-errors.md)。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。未実装。** サーバ側の文書に「保存・更新 I/F（未実装）」とある。画面側でできる検証は画面側で行う。
+
 ---
 
 ## Q-015 保存はどういう仕組みか
@@ -247,6 +308,14 @@ bash scripts/check-spec.sh
 （`save` は不要かもしれないと明記済み）。
 
 **影響範囲**: `UI-DIFF-03`、`POST /plans/{planId}/save`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。未実装。** `writeEnabled=false` の間、画面側はサーバ側へ保存しない（`UI-DIFF-09`）。
+> 未確定と列挙されている操作: BM3 XML へのタスク追加 / BMD 生成 / BM3 アプリでの保存支援 /
+> 横断リンクの永続保存 / `Quantity=0` の割り込みタスク生成 / タスク分割 / 循環承認。
+> 差分を送るのか全文を送るのかは、実装時に決まる。
 
 ---
 
@@ -268,6 +337,13 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `openapi.yaml` の `servers`、`GET /health`、`GET /meta`、
 サーバ側に繋がらないときの案内文。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** API は**同一オリジン**の `/api/v1/*`。新 GUI は同じサーバの `/external/` に置かれるので、
+> ホスト名・ポート番号を画面側が知る必要は無い。`GET /meta` は `server` `version` `capabilities[]` `writeEnabled` を返す。
+> **`capabilities` の各名前の意味は不明**なので、画面側は `writeEnabled` だけを見る。起動方法は依然として不明。
 
 ---
 
@@ -293,6 +369,11 @@ bash scripts/check-spec.sh
 **影響範囲**: `UI-GANTT-11`、`UI-CONNECT-*`、API が 1 つ増える見込み。
 以前の「編集中は通信しない」方針の見直しにあたります。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **未実装のまま。** 日程の再計算を返す呼び出しは無い。画面側は編集した帯だけを動かす方針を続ける。
+
 ---
 
 ## Q-027 選択肢から選ぶ項目はあるか
@@ -313,6 +394,12 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `UI-GANTT-11`、`UI-GANTT-18`、`GET /meta`。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** `priority` は `高` / `中` の 2 値（暫定表示）、`kind` は 3 値。他に選択肢を持つ項目は無い。
+> 項目の定義（型・選択肢）をサーバ側から受け取る仕組みは**無い**。
+
 ---
 
 ## Q-028 マイルストンとマイルストンバッファは XML 上どう表現されるか
@@ -330,6 +417,12 @@ bash scripts/check-spec.sh
 守る対象を指す形にしています。
 
 **影響範囲**: `UI-GANTT-17`、`UI-NET-08`、データモデルの章。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。** マイルストンは `kind=milestone`（期間ゼロからの推定、暫定）。マイルストンバッファは `kind=buffer` の行で、
+> `sourceBufferId` を持ち `protects` で守る相手を指す。
 
 ---
 
@@ -372,6 +465,12 @@ bash scripts/check-spec.sh
 
 **影響範囲**: データモデルの章、`UI-GANTT-18`、今後の複数プロジェクト表示。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。受領済み。** `tasks[]` は 22 項目（[`interface/24-field-catalog.md`](interface/24-field-catalog.md)）。
+> 以前の仮の一覧（部署・顧客など）は実物に無く、消した。工数・割当率は無い（`Q-034`）。
+
 ---
 
 
@@ -386,6 +485,11 @@ bash scripts/check-spec.sh
 **分からない間の仮置き**: 部分更新はない前提。全文置換のみ。
 
 **影響範囲**: `UI-GANTT-06`、`PUT /plans/{planId}`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **未実装のまま。** 保存 I/F 自体が無い。
 
 ---
 
@@ -402,6 +506,12 @@ bash scripts/check-spec.sh
 
 **影響範囲**: `UI-NET-06`、`UI-GANTT-01`。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** 全部で 47 案件。`projectIds` を省くと全件で「重い」とサーバ側の文書にある。
+> 1 案件あたりのタスク数は不明。
+
 ---
 
 ## Q-013 差分は誰が計算するのか
@@ -414,6 +524,11 @@ bash scripts/check-spec.sh
 **分からない間の仮置き**: **画面側で計算**します。サーバ側に依存しない方針です。
 
 **影響範囲**: `UI-DIFF-01`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。画面側で計算する。** 読み込み時点の JSON と現在の JSON を比べる。サーバ側に差分の機能は無い。
 
 ---
 
@@ -460,6 +575,11 @@ Shift_JIS など他のものもあり得るか。
 
 **影響範囲**: [`ui/12-network.md`](ui/12-network.md) のほぼ全体。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **変更なし。** サーバ側の文書は「ネットワーク図」と呼んでおり、図法の指定は無い。ノード＝タスクの前提を続ける。
+
 ---
 
 ## Q-025 サーバ側が実際に返すエラーコードは何か
@@ -475,6 +595,12 @@ XML の構文エラーで行番号・列番号は返るか。
 
 **影響範囲**: エラーの章、画面側のエラー処理全体。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **未確定のまま。** `GET /portfolio` は一部の失敗を **200 の `errors[]`** で返す（`projectId` と `message`）。
+> それ以外のエラー応答の形は文書に無い。
+
 ---
 
 ## Q-023 XML の書式を保ったまま書き戻せるか
@@ -489,6 +615,12 @@ XML の構文エラーで行番号・列番号は返るか。
 **分からない間の仮置き**: 書式を保つ方針と書いていますが、実現方法は未定です。
 
 **影響範囲**: `UI-DIFF-04`、保存処理。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **画面側には無関係になった。** XML の書き出しはサーバ側の仕事（画面側は JSON しか扱わない）。
+> サーバ側が書き戻すときの書式の保持は、サーバ側の課題として残る。
 
 ---
 
@@ -528,6 +660,11 @@ XML の構文エラーで行番号・列番号は返るか。
 
 **影響範囲**: `UI-DIFF-07`、`UI-DIFF-08`、[`ui/13-diff.md`](ui/13-diff.md)。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **変更なし。** 差分表示は「フロント側で自由に作ってよいもの」に含まれる。
+
 ---
 
 ## Q-032 項目カタログをサーバ側から受け取れるか
@@ -553,6 +690,11 @@ XML の構文エラーで行番号・列番号は返るか。
 **影響範囲**: [`interface/24-field-catalog.md`](interface/24-field-catalog.md) 全体、
 `UI-COMMON-05`、`UI-COMMON-06`、`GET /meta`。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。無い。** 項目の定義はこのリポジトリの [`interface/24-field-catalog.md`](interface/24-field-catalog.md) で持つ。
+
 ---
 
 ## Q-033 親子関係の変更を、サーバ側は XML 上どう受け取るか
@@ -574,6 +716,11 @@ XML の構文エラーで行番号・列番号は返るか。
 並び順は画面側で階層順に正規化しています。
 
 **影響範囲**: `UI-NET-14`、`UI-GANTT-25`、データモデルの章。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **一部確定。** 親子は `parentId` で表す。書き戻しは未実装（`Q-015`）。
 
 ---
 
@@ -607,6 +754,13 @@ XML の構文エラーで行番号・列番号は返るか。
 **影響範囲**: `UI-GANTT-27`、`UI-COMMON-09`、`UI-NET-18`、`UI-OPEN-01`、
 [`interface/20-data-model.md`](interface/20-data-model.md)、`openapi.yaml`。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。** タスクは `projectId` を持ち、`GET /portfolio?projectIds=17,49` で**複数プロジェクトが 1 回で返る**。
+> プロジェクトの色（`color`）もサーバ側が決める。「複数のファイルを開く」心配は不要になった。
+> プロジェクトをまたぐ移動が許されるかは、保存 I/F が無いため引き続き不明。
+
 ---
 
 ## Q-034 タスクに工数・割当率はあるか
@@ -636,6 +790,11 @@ XML の構文エラーで行番号・列番号は返るか。
 **影響範囲**: `UI-GANTT-27`、[`interface/24-field-catalog.md`](interface/24-field-catalog.md)。
 工数と割当率があるなら、どちらも**中核項目**になります。
 
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。無い。** `tasks[]` に工数・割当率の項目は無い。**負荷のグラフは作らない**（方針通り）。
+
 ---
 
 ## Q-037 調整メモや合意を、計画ファイルの外に残す場所はあるか
@@ -655,6 +814,61 @@ XML の構文エラーで行番号・列番号は返るか。
 複数人がコメントを書き合う仕組みは作っていません。
 
 **影響範囲**: `UI-ADJ-05`。「ある」なら保存の API が 1 つ増えます。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。無い。** 調整メモを残す場所はサーバ側に無い。画面側だけに残す（ブラウザを閉じると消える）。
+
+---
+
+## Q-038 `consumed`（バッファの消費）の単位は何か
+
+**知りたいこと**: `tasks[]` の `consumed` は「バッファ消費率」とあるが、
+0〜1 なのか、0〜100 なのか、日数なのか。
+
+**なぜ必要か**: バッファの帯の「どこまで消費したか」の塗りは、この値で決まります。
+単位を取り違えると、消費 30% を 3000% として描くか、何も塗らないかになります。
+
+**分からない間の仮置き**: モックは**日数**として描いています（`duration` と同じ単位）。
+
+**影響範囲**: `UI-GANTT-04`、`UI-NET-08`、[`interface/20-data-model.md`](interface/20-data-model.md)。
+
+---
+
+## Q-039 `assignees` は Skill 名。**人**はどこで分かるのか
+
+**知りたいこと**: 受領した文書で `assignees` は「割当リソース名。BM3 Skill 名」とある。
+例は `サウンドPAVCT`。
+
+- リソース調整の対象は **Skill（資源の種類）でよいか**。それとも人まで落とす必要があるか
+- 人の情報は BM3 のどこにあるか。応答に足せるか
+- 1 つの Skill に何人いるか（容量）は分かるか
+
+**なぜ必要か**: このツールの主目的は**リソースの調整**です。
+画面は「リソース別」に並べ替えて重なりを見せ、調整パネルで別のリソースへ振ります。
+その「リソース」が Skill なら、**「サウンドPAVCT が 5 月に 3 本重なっている」までは見えるが、
+「その中の誰が」は見えません。** 会議の場でそれで足りるのかを確かめたい。
+
+**分からない間の仮置き**: 画面では「担当」と呼んでいたものを**「リソース」**に言い換え、
+Skill 名をそのまま並べています。判定はしない方針なので、Skill でも人でも画面の作りは同じです。
+
+**影響範囲**: `UI-GANTT-27`〜`29`、`UI-NET-19`、`UI-ADJ-*`。人まで落とすなら `tasks[]` に項目が増えます。
+
+---
+
+## Q-040 ホスト画面との、クエリ以外のやり取りはあるか
+
+**知りたいこと**: 新 GUI は `/external-host` から iframe で開かれ、起動クエリを受け取る。
+それ以外に、ホスト画面と新 GUI の間でやり取りするもの（選択の同期、閉じる合図、
+`teamId` の意味）はあるか。
+
+**なぜ必要か**: iframe の中と外は別の文書なので、やり取りがあるなら `postMessage` などの
+取り決めが要ります。無いなら起動クエリだけで済みます。
+
+**分からない間の仮置き**: **起動クエリだけ**。ホスト画面へ戻るのはブラウザの操作に任せる。
+
+**影響範囲**: `UI-COMMON-10`、[`ui/14-navigation.md`](ui/14-navigation.md)。
 
 ---
 
@@ -697,6 +911,17 @@ XML の構文エラーで行番号・列番号は返るか。
 > あるなら、計画ファイルとは別の場所（設定ファイルなど）に置く必要がある。
 
 **影響範囲**: `UI-NET-05`、`UI-NET-10`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **変更なし（前提は変わった）。** `assignees` は人ではなく BM3 の **Skill 名**（`Q-039`）。
+> 読み仮名は無く、並び順の問題は同じ。「最初の作業が始まる順」を続ける。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **変更なし。** 「ネットワーク図の配置・折りたたみ・ドラッグ操作はフロント側で自由」とある。配置の保存先は依然として画面側だけ。
 
 ---
 
@@ -746,3 +971,8 @@ AI に何をさせたいか。計画を読ませて助言させるのか、計�
 （バッファとクリティカルチェーンを主要な表示要素として扱っている）。
 
 **影響範囲**: [`00-glossary.md`](00-glossary.md)、`UI-GANTT-03`、`UI-GANTT-04`、`UI-NET-02`。
+
+
+> ✅ **2026-09-04 結論**（サーバ側の I/F 一覧を受領 — [`interface/received/`](interface/received/)）
+> 
+> **確定。CCPM 前提。** サーバ側は BM3（CCPM の道具）の XML を扱い、クリティカルチェーンとバッファを返す。

@@ -1,18 +1,20 @@
 openapi: 3.0.3
 
 info:
-  title: 計画ファイル編集ツール ローカル API
-  version: 0.1.0-draft
+  title: BM3 XML Workbench — 新 GUI 向け API
+  version: 0.1.0
   description: |
-    XML 形式の計画ファイルを編集するツールの、画面側とサーバ側の境界を定義します。
+    XML 形式の計画ファイル（BM3）を扱うツールの、画面側とサーバ側の境界を定義します。
 
-    ## ⚠️ このファイルの現在の状態
+    ## このファイルの現在の状態
 
-    **すべて推測です。** サーバ側の実物の仕様が未入手のため、
-    画面仕様（`docs/ui/`）から必要な操作を導いて仮に置いたものです。
+    **2026-09-04 にサーバ側の I/F 一覧を受領し、それに合わせて書き直しました。**
+    受領した原文は `docs/interface/received/2026-09-04-frontend-interface-list.md` にあります。
 
-    実物を確認したら、このファイルを差し替えてください。
-    確認事項の一覧は `docs/90-open-questions.md` にあります。
+    - 🟢 が付いている操作は、**サーバ側の文書で確認できたもの**です
+    - 🔴 が付いている操作は、**サーバ側で「未実装」と明記されているもの**です。
+      形はこちらの想定のまま残しています。サーバ側が実装するときの叩き台であり、
+      実物が決まったら差し替えます
 
     ## 読み方
 
@@ -20,51 +22,47 @@ info:
     - 各操作の `x-ui-operations` に、**その API がどの画面操作のために存在するか**を書いています
     - 画面操作の一覧は `docs/ui/10-screens.md` にあります
 
-    ## 前提
+    ## 前提（サーバ側の文書より）
 
-    - 利用者のパソコンの中だけで動きます。外部との通信はありません
-    - 計画の中身は **XML 文字列そのもの**をやり取りします（構造化しません）
-    - 保存時は `If-Match` で版を照合し、他人の変更を消す事故を防ぎます
+    - 新 GUI は同じサーバの `/external/` に置かれ、`/external-host` が iframe で開く
+    - API は**同一オリジン**の `/api/v1/*` を使う
+    - **現時点は読み込み専用。** `GET /meta` の `writeEnabled` が `false` の間、
+      画面側はサーバ側への保存を行ってはならない（画面内ドラフトに留める）
+    - 計画の中身は **XML ではなく、サーバ側が変換した JSON** で受け取る。
+      画面側は XML の要素名を一切知らなくてよい
 
   contact:
     name: 確認事項の一覧
     url: https://github.com/chidiremen/ccpm-update-support/blob/main/docs/90-open-questions.md
 
 servers:
-  - url: http://127.0.0.1:{port}/api/v1
-    description: 利用者のパソコン上で動くサーバ側
-    variables:
-      port:
-        default: "8080"
-        description: ⚠️ 実際のポート番号は未確認 (Q-002)
+  - url: /api/v1
+    description: |
+      同一オリジン。新 GUI はこのサーバの `/external/` から配信されるため、
+      ホスト名やポート番号を画面側が知る必要はない 🟢
 
-# 認証は設けていません。利用者のパソコンの中だけで動き、
-# 自分自身(127.0.0.1)からの接続しか受け付けない前提のためです。
-#
-# ⚠️ この前提が正しいかは未確認です (Q-007)。
-#    サーバ側の待ち受け設定によっては、同じネットワーク上の
-#    他のパソコンから計画ファイルを読めてしまう可能性があります。
-#
-# 空の配列は「認証を要求しない」ことを明示的に宣言するものです。
-# 書き忘れと区別するため、あえて明記しています。
+# 認証は設けていません。サーバ側の文書にも認証の記述はありません。
+# 利用者のパソコンの中だけで動く前提です (Q-007 は引き続き未確認)。
 security: []
 
 tags:
   - name: system
-    description: 疎通確認とサーバ情報
-  - name: plans
-    description: 計画ファイルの読み込み・保存
+    description: 疎通確認とサーバ情報 🟢
+  - name: portfolio
+    description: 複数プロジェクトの計画を一度に読む 🟢
+  - name: write
+    description: 保存・更新 — **サーバ側で未実装** 🔴
 
 paths:
 
   /health:
     get:
       tags: [system]
-      summary: 疎通確認
+      summary: 疎通確認 🟢
       description: |
-        サーバ側が動いているかを確かめます。画面側の起動時に呼びます。
+        サーバ側が動いているかを確かめます。起動時に最初に呼びます。
 
-        確定度: 🔴 推測 (Q-002)
+        確定度: 🟢 サーバ側の文書で確認済み
       operationId: getHealth
       x-ui-operations: [起動時]
       responses:
@@ -78,330 +76,199 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [ok]
+                    example: ok
 
   /meta:
     get:
       tags: [system]
-      summary: サーバ側の情報を取得する
+      summary: サーバ情報と対応機能 🟢
       description: |
-        サーバ側の版と、対応している計画ファイルの形式を返します。
+        サーバ側の名前・版・対応機能を返します。
 
-        画面側が想定する形式とずれていたら、起動時に警告できます。
+        **`writeEnabled` がいちばん重要です。** これが `false` の間、
+        画面側は保存・反映のボタンを「未実装」または「画面内ドラフト」の表示に留めます
+        （UI-DIFF-09）。
 
-        確定度: 🔴 推測 (Q-002)
+        確定度: 🟢 サーバ側の文書で確認済み
       operationId: getMeta
-      x-ui-operations: [起動時]
+      x-ui-operations: [起動時, UI-DIFF-09]
       responses:
         "200":
           description: サーバ側の情報
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ServerMeta"
+                $ref: "#/components/schemas/Meta"
 
-  /plans:
-    post:
-      tags: [plans]
-      summary: 計画ファイルを開く
-      description: |
-        計画ファイルを読み込み、編集セッションを始めます。
-
-        返される `planId` を、以降の操作で使います。
-        同時に返される `revision` は、**保存時に必要になるので保持してください**。
-
-        ## ⚠️ 最優先の確認事項 (Q-004)
-
-        ファイルの指定方法が未確定です。この API は現在
-        「サーバ側から見えるパスを指定する」形で書いていますが、
-        「ファイルの中身を送る」形の可能性もあります。
-
-        ブラウザは安全上の理由から、利用者が選んだファイルの絶対パスを
-        画面側に教えてくれません。パス指定にするなら、
-        利用者に手で入力してもらうか、サーバ側が候補一覧を返す必要があります。
-
-        確定度: 🔴 推測 (Q-004)
-      operationId: openPlan
-      x-ui-operations: [UI-OPEN-01, UI-OPEN-02]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/OpenPlanRequest"
-            examples:
-              パス指定:
-                summary: サーバ側から見えるパスを指定する
-                value:
-                  sourcePath: "C:\\work\\project-a.xml"
-              中身を送る:
-                summary: ファイルの中身を直接送る
-                value:
-                  xml: "<?xml version=\"1.0\"?><plan>...</plan>"
-                  displayName: "project-a.xml"
-      responses:
-        "201":
-          description: 開けた
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PlanEnvelope"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessablePlan"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  /plans/{planId}:
-
-    parameters:
-      - $ref: "#/components/parameters/PlanId"
-
+  /portfolio:
     get:
-      tags: [plans]
-      summary: 現在の計画を取得する
+      tags: [portfolio]
+      summary: 複数プロジェクトの計画を読む 🟢
       description: |
-        サーバ側が保持している最新の計画を返します。
+        **新 GUI が使う主たる API です。** サーバ側が BM3 の XML を解析し、
+        画面が扱いやすい `projects / tasks / deps / critical` の形に変換して返します。
 
-        使う場面:
-        - 画面を再読み込みしたとき
-        - **保存が衝突（409）したあと、最新を取り直すとき**（UI-DIFF-06）
+        - 複数のプロジェクトを **1 回の呼び出し**で受け取ります（`projectIds`）
+        - 画面側は **XML の要素名を知らなくてよい**（サーバ側が変換済み）
+        - `projectIds` を省くと全件（サーバ側の文書では 47 案件）になり**重い**。
+          起動クエリから受け取った `projectIds` をそのまま渡すこと
+        - 応答の `id` は `{ProjectId}:{TaskId}` の形。**画面側で作り替えてはならない**
+          （依存関係とクリティカルチェーンのキーでもある）
+        - `revision` は将来の保存 I/F で使う予定。**読んだら保持しておく**
 
-        複数プロジェクトの表示（UI-GANTT-27〜29 / UI-COMMON-08 / UI-NET-18〜19）と
-        調整パネル（UI-ADJ-01〜05）は、
-        **ここで受け取ったデータの並べ替え・絞り込み・画面側での編集だけ**で成り立ちます。
-        新しい呼び出しは要りません。担当の付け替えや日程の試行は
-        画面側にたまり、保存（PUT）でまとめて送られます。
-
-        ⚠️ 調整メモ（UI-ADJ-05）だけは計画ファイルの外に置くものなので、
-        残す場所がサーバ側にあれば呼び出しが 1 つ増えます (Q-037)。
-        確認できるまで、ここには書きません。
-
-        ⚠️ ただし、プロジェクトごとに計画ファイルが分かれている場合は、
-        **複数のファイルを同時に開く**必要が出ます (Q-035)。
-        そのときは POST /plans と、この API の呼び方が変わります。
-
-        確定度: 🔴 推測 (Q-003)
-      operationId: getPlan
-      x-ui-operations: [UI-GANTT-01, UI-NET-01, UI-DIFF-06, UI-GANTT-27, UI-GANTT-28, UI-GANTT-29, UI-COMMON-08, UI-NET-18, UI-NET-19, UI-ADJ-01, UI-ADJ-02, UI-ADJ-03, UI-ADJ-04, UI-ADJ-05]
+        確定度: 🟢 サーバ側の文書で確認済み
+      operationId: getPortfolio
+      x-ui-operations: [起動時, UI-COMMON-10, UI-GANTT-01, UI-NET-01, UI-GANTT-27, UI-GANTT-28, UI-GANTT-29, UI-COMMON-08, UI-NET-18, UI-NET-19, UI-ADJ-01, UI-ADJ-02, UI-ADJ-03, UI-ADJ-04, UI-ADJ-05]
+      parameters:
+        - name: projectIds
+          in: query
+          required: false
+          description: |
+            表示するプロジェクトの識別子（カンマ区切り）。**指定順を保持して返る。**
+            必須ではないが、省くと全件になり重いため**実質必須**。
+          schema:
+            type: string
+          example: "17,49"
+        - name: asOf
+          in: query
+          required: false
+          description: 判定基準日（ISO 日時文字列）。省くとサーバ側の現在時刻または設定値
+          schema:
+            type: string
+          example: "2026-09-04"
       responses:
         "200":
-          description: 現在の計画
+          description: |
+            計画。**一部のプロジェクトが読めなくても 200 で返り、`errors[]` にその旨が入ります。**
+            画面側は `errors[]` が空でないことを利用者に伝える必要があります（UI-COMMON-11）。
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanEnvelope"
-            application/xml:
-              schema:
-                type: string
-                description: |
-                  ⚠️ 案 B（XML をそのまま本文にする）を採る場合の形式。
-                  この場合 `revision` は `ETag` ヘッダーで返します。
-                  どちらを採るかは Q-003 で確認します。
+                $ref: "#/components/schemas/Portfolio"
               examples:
-                生の XML:
-                  value: "<?xml version=\"1.0\"?><plan>...</plan>"
-          headers:
-            ETag:
-              description: 現在の版。案 B のときに使います
-              schema:
-                type: string
-        "404":
-          $ref: "#/components/responses/NotFound"
+                最小:
+                  externalValue: ./examples/portfolio-example.json
 
-    put:
-      tags: [plans]
-      summary: 計画を置き換える（保存）
+  /portfolio-mock:
+    get:
+      tags: [portfolio]
+      summary: 互換エイリアス（使わない） 🟢
+      deprecated: true
       description: |
-        計画の XML を**全文置き換え**ます。部分更新はできません。
+        `/portfolio` と同じ応答を返す互換用の別名です。
+        サーバ側の文書に「今後のフロント開発では `/portfolio` を使うこと」とあるため、
+        **画面側は使いません。** 存在だけ記録しておきます。
+      operationId: getPortfolioMock
+      x-ui-operations: []
+      responses:
+        "200":
+          description: "`/portfolio` と同じ"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Portfolio"
 
-        ## `If-Match` は必須です
+  # ------------------------------------------------------------------
+  # ここから下は、サーバ側で「未実装」と明記されているものです 🔴
+  #
+  # サーバ側の文書（保存・更新 I/F）によると、次の操作は I/F 未確定:
+  #   BM3 XML へのタスク追加 / BMD 生成 / BM3 アプリでの保存支援 /
+  #   横断リンクの永続保存 / Quantity=0 の割り込みタスク生成 / タスク分割 / 循環承認
+  #
+  # 形はこちらの想定のまま残しています。サーバ側が実装するときの叩き台であり、
+  # 実物が決まったら差し替えます (Q-015, Q-005, Q-014)。
+  # 画面側は GET /meta の writeEnabled を見て、false の間はこれらを呼びません。
+  # ------------------------------------------------------------------
 
-        読み込んだときの `revision` を `If-Match` に入れてください。
+  /plans/{planId}:
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+    put:
+      tags: [write]
+      summary: 計画を保存する（未実装） 🔴
+      x-status: 未実装（サーバ側で確認済み）
+      description: |
+        画面側でためた変更をサーバ側へ送り、BM3 側へ反映してもらう想定。
 
-        サーバ側が持っている版と食い違えば `409` が返り、保存は行われません。
-        これにより、**自分が読み込んだ後に入った他人の変更を、
-        気づかずに消してしまう事故**を防ぎます。
+        ⚠️ **サーバ側で未実装です。** `writeEnabled=false` の間は呼びません。
+        本文の形（JSON で差分を送るのか、全文を送るのか）も未定です (Q-015)。
+        `If-Match` による版の照合は、`revision` が応答に含まれていることから
+        **できる可能性が高い**が未確認です (Q-005)。
 
-        `409` を受け取ったときの復帰手順は `docs/ui/13-diff.md` の
-        `UI-DIFF-06` を参照してください。
-
-        確定度: 🔴 推測 (Q-005)
-      operationId: replacePlan
+        確定度: 🔴 未実装
+      operationId: savePlan
       x-ui-operations: [UI-DIFF-03]
       parameters:
         - name: If-Match
           in: header
           required: true
-          description: 読み込んだときの `revision`
+          description: "`GET /portfolio` で受け取った `revision`"
           schema:
             type: string
-          example: "r7"
+          example: "bm3-2-..."
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReplacePlanRequest"
-          application/xml:
-            schema:
-              type: string
-              description: 案 B を採る場合の形式（Q-003）
+              $ref: "#/components/schemas/SaveRequest"
       responses:
         "200":
-          description: 保存できた。新しい版を返します
+          description: 保存できた。新しい版が返る
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanEnvelope"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                type: object
+                required: [revision]
+                properties:
+                  revision:
+                    type: string
         "409":
-          description: |
-            **版が食い違ったため保存しなかった。**
-
-            自分が読み込んだ後に、他の誰か（または自分の別ウィンドウ）が
-            保存しています。最新を取り直し、変更を突き合わせてからやり直してください。
-
-            **変更を捨てさせないでください。**
+          description: 版が食い違った（他の人が先に保存した）
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictError"
-        "412":
-          description: |
-            `If-Match` が指定されていない、または形式が不正。
-
-            ⚠️ サーバ側が 409 と 412 をどう使い分けるかは未確認です (Q-005)。
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                衝突:
+                  externalValue: ./examples/conflict-error.json
         "422":
           $ref: "#/components/responses/UnprocessablePlan"
         "500":
           $ref: "#/components/responses/InternalError"
 
-    delete:
-      tags: [plans]
-      summary: 編集セッションを閉じる
-      description: |
-        サーバ側が保持している編集セッションを終了します。
-        **ファイルは削除しません。**
-
-        確定度: 🔴 推測 (Q-004)
-      operationId: closePlan
-      x-ui-operations: [画面を閉じる]
-      responses:
-        "204":
-          description: 閉じた
-        "404":
-          $ref: "#/components/responses/NotFound"
-
   /plans/{planId}/validate:
     parameters:
       - $ref: "#/components/parameters/PlanId"
     post:
-      tags: [plans]
-      summary: 計画を検証する（保存はしない）
+      tags: [write]
+      summary: 保存せずに検証する（未実装） 🔴
+      x-status: 未実装（サーバ側で確認済み）
       description: |
-        保存する前に、計画として妥当かを確かめます。**ファイルは変更しません。**
+        保存の前に、計画の妥当性をサーバ側に確かめてもらう想定。
 
-        検証したい XML を本文で送ります。省略した場合は、
-        サーバ側が現在保持している内容を検証します。
+        ⚠️ **サーバ側で未実装です** (Q-014)。
+        画面側でできる検証（依存の循環など）は画面側で行っています。
 
-        結果は「エラー」と「警告」に分かれます。
-        エラーがあると保存できません。警告は利用者の判断に委ねます。
-
-        確定度: 🔴 推測 (Q-014)
+        確定度: 🔴 未実装
       operationId: validatePlan
       x-ui-operations: [UI-DIFF-02]
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                xml:
-                  type: string
-                  description: 検証したい XML。省略するとサーバ側の現在の内容を検証
+              $ref: "#/components/schemas/SaveRequest"
       responses:
         "200":
-          description: |
-            検証を実行した。**問題があっても 200 を返します。**
-            検証できたこと自体は成功だからです。
-            問題の有無は本文の `valid` で判断してください。
+          description: 検証結果
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ValidationResult"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  /plans/{planId}/save:
-    parameters:
-      - $ref: "#/components/parameters/PlanId"
-    post:
-      tags: [plans]
-      summary: 計画ファイルに書き出す
-      description: |
-        サーバ側が保持している内容を、ファイルへ書き出します。
-
-        ## ⚠️ この API が必要かは未確定です (Q-015)
-
-        `PUT /plans/{planId}` がその場でファイルに書き込むなら、この API は不要です。
-
-        分けるのは「サーバ側のメモリ上で編集し、明示的に書き出す」作りの場合です。
-        別名保存にも対応しやすくなります。
-
-        **どちらの作りかをサーバ側に確認してください。**
-        不要なら、この操作は削除します。
-
-        確定度: 🔴 推測 (Q-015)
-      operationId: savePlan
-      x-ui-operations: [UI-DIFF-03]
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                targetPath:
-                  type: string
-                  description: |
-                    別名で保存する場合の保存先。省略すると元のファイルに上書きします。
-
-                    ⚠️ 別名保存に対応するかは未確認 (Q-015)
-      responses:
-        "200":
-          description: 書き出せた
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [savedPath, revision]
-                properties:
-                  savedPath:
-                    type: string
-                  revision:
-                    type: string
-        "403":
-          description: 書き込む権限がない
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
+              examples:
+                警告あり:
+                  externalValue: ./examples/validation-result.json
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -412,116 +279,239 @@ components:
       name: planId
       in: path
       required: true
-      description: 計画を開いたときに発行された識別子
+      description: |
+        `GET /portfolio` の応答にある `planId`。現時点の値は常に `bm3-portfolio` 🟢
       schema:
         type: string
-      example: "pln_01HZX3K8"
+      example: "bm3-portfolio"
 
   schemas:
 
-    ServerMeta:
+    Meta:
       type: object
-      required: [serverVersion]
+      description: "`GET /meta` の応答 🟢"
+      required: [server, version, capabilities, writeEnabled]
       properties:
-        serverVersion:
+        server:
           type: string
-          description: サーバ側の版
-          example: "1.4.2"
-        supportedSchemaVersions:
+          example: "bm3-xml-workbench"
+        version:
+          type: string
+          example: "0.1.0"
+        capabilities:
           type: array
-          description: 対応している計画ファイルの形式
+          description: |
+            対応機能の名前の一覧。受領時点の値は
+            `["portfolio-mock-read", "bm3-xml-derived-json"]`。
+            画面側は名前で判定せず、`writeEnabled` だけを見る（名前の意味が未確認のため）
           items:
             type: string
-          example: ["1.0"]
-        capabilities:
-          type: object
+        writeEnabled:
+          type: boolean
           description: |
-            サーバ側が対応している機能。
-            画面側はこれを見て、使えない機能を隠せます。
+            **`false` の間、画面側はサーバ側への保存・反映を行ってはならない。**
+            保存ボタンは「未実装」または「画面内ドラフト」の表示に留める（UI-DIFF-09）
+          example: false
 
-            ⚠️ サーバ側がこれを返せるかは未確認 (Q-002)。
-            返せるなら、確認事項の多くを実行時に判定できるようになります。
-          properties:
-            optimisticLock:
-              type: boolean
-              description: 版の照合（If-Match）に対応しているか (Q-005)
-            validation:
-              type: boolean
-              description: 検証に対応しているか (Q-014)
-            criticalChain:
-              type: boolean
-              description: クリティカルチェーンを計算できるか (Q-011)
-            saveAs:
-              type: boolean
-              description: 別名保存に対応しているか (Q-015)
-
-    PlanEnvelope:
+    Portfolio:
       type: object
-      description: |
-        計画の中身（XML）と、それに付随する情報をひとまとめにしたもの。
-
-        **`xml` と `revision` は必ずセットで扱ってください。**
-        取り違えると、保存時の版の照合が意味をなさなくなります。
-      required: [planId, revision, xml]
+      description: "`GET /portfolio` の応答 🟢"
+      required: [planId, revision, projects, tasks, deps, critical, today, errors]
       properties:
         planId:
           type: string
-          description: この編集セッションの識別子
-          example: "pln_01HZX3K8"
+          description: 現時点は常に `bm3-portfolio`
+          example: "bm3-portfolio"
         revision:
           type: string
           description: |
-            現在の版。**保存するときに `If-Match` で送り返します。**
-          example: "r7"
-        xml:
-          type: string
-          description: 計画の中身そのもの
+            版の印。**将来の保存 I/F で使う予定なので、読んだら保持する。**
+            形式は未確認（受領した文書でも `bm3-2-...` と省略されていた）
+          example: "bm3-2-..."
         sourcePath:
           type: string
-          description: 読み込み元のファイルの場所。画面に表示するのに使います
-          example: "C:\\work\\project-a.xml"
-        displayName:
-          type: string
-          description: 画面に表示する名前
-          example: "project-a.xml"
-        schemaVersion:
-          type: string
-          description: この計画ファイルの形式の版
-          example: "1.0"
-        encoding:
-          type: string
+          description: サーバ側が読んだ XML の置き場所（表示用。画面側は解釈しない）
+          example: "C:\\...\\bm3-xml-workbench\\raw"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        tasks:
+          type: array
           description: |
-            元のファイルの文字コード。書き出すときに同じものを使います。
+            タスク・マイルストン・バッファのすべて。バッファは `kind=buffer` として混ざる
+            （元は BM3 の `MilestoneBuffer`）
+          items:
+            $ref: "#/components/schemas/Task"
+        deps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Dep"
+        critical:
+          type: array
+          description: クリティカルチェーン上のタスクの `id` の一覧。**サーバ側が決める**（画面側は計算しない）
+          items:
+            type: string
+          example: ["17:1", "17:158"]
+        today:
+          type: string
+          description: 判定基準日（`asOf` を反映した値）。画面の「今日」の線はこれを使う
+          example: "2026-09-04"
+        errors:
+          type: array
+          description: |
+            一部のプロジェクトの XML 解析に失敗したときに入る。**空なら正常。**
+            空でなければ、そのプロジェクトは応答に含まれていない。利用者に伝えること（UI-COMMON-11）
+          items:
+            $ref: "#/components/schemas/ParseError"
 
-            ⚠️ UTF-8 以外があり得るかは未確認 (Q-017)
-          example: "UTF-8"
+    Project:
+      type: object
+      required: [id, name, color]
+      properties:
+        id:
+          type: string
+          description: BM3 の ProjectId
+          example: "17"
+        name:
+          type: string
+          example: "BEV step3 AMP"
+        color:
+          type: string
+          description: 表示用の色。**サーバ側が決める**（画面側で割り当てない）
+          example: "#4a7fd0"
 
-    OpenPlanRequest:
+    Task:
       type: object
       description: |
-        **`sourcePath` と `xml` のどちらか一方**を指定します。
-
-        ⚠️ どちらの方式になるかは未確認です (Q-004)。
-        確定したら、使わない方を削除してください。
+        タスク 1 件。項目の意味と「中核 / 素通し」の区分は
+        `docs/interface/20-data-model.md` と `docs/interface/24-field-catalog.md` にあります。
+      required: [id, projectId, name, kind, parentId, duration, start, finish, progress, assignees]
       properties:
-        sourcePath:
+        id:
           type: string
-          description: サーバ側から見えるファイルの場所
-          example: "C:\\work\\project-a.xml"
-        xml:
+          description: "画面内のタスク ID。形式は `{ProjectId}:{TaskId}`。**画面側で作り替えない**"
+          example: "17:194"
+        sourceProjectId:
           type: string
-          description: ファイルの中身そのもの
-        displayName:
+          description: 元の BM3 ProjectId
+          example: "17"
+        sourceTaskId:
           type: string
-          description: 画面に表示する名前。`xml` を送るときに使います
+          description: 元の BM3 TaskId。バッファ行では無いことがある
+          example: "194"
+        sourceBufferId:
+          type: string
+          description: BM3 の MilestoneBuffer 由来の行だけが持つ
+        name:
+          type: string
+          example: "HILS：マイルストーン集約タスク"
+        kind:
+          type: string
+          enum: [task, milestone, buffer]
+          description: 表示上の種別。**判定は暫定**（BM3 の TaskType と期間ゼロから推定）
+        parentId:
+          type: string
+          nullable: true
+          description: 親タスクの `id`。最上位は `null`
+          example: "17:158"
+        projectId:
+          type: string
+          description: 所属プロジェクト
+          example: "17"
+        duration:
+          type: number
+          description: 期間（日）。BM3 の分単位の値を `MinutesPerDay` で換算したもの
+          example: 3
+        start:
+          type: string
+          format: date
+          example: "2024-11-20"
+        finish:
+          type: string
+          format: date
+          example: "2024-11-22"
+        progress:
+          type: number
+          description: "進捗率 0〜100。**暫定値**（`(duration - remainder) / duration` 由来。BM3 の正式な進捗率ではない）"
+          example: 100
+        assignees:
+          type: array
+          description: |
+            割り当てられた資源の名前。**BM3 の Skill 名であって、人の名前ではない。**
+            複数あり得る (Q-039)
+          items:
+            type: string
+          example: ["サウンドPAVCT"]
+        wbsCode:
+          type: string
+          description: BM3 の Task Code
+          example: "194"
+        priority:
+          type: string
+          description: "**暫定表示。** クリティカルなら `高`、それ以外は `中`"
+          example: "中"
+        phase:
+          type: string
+          description: 現時点は常に空
+          example: ""
+        note:
+          type: string
+          description: BM3 の Memo、またはバッファの情報
+        createdAt:
+          type: string
+          description: プロジェクトの AsOfDate 由来（タスク個別の値ではない）
+        updatedAt:
+          type: string
+          description: プロジェクトの AsOfDate 由来（タスク個別の値ではない）
+        consumed:
+          type: number
+          description: "`kind=buffer` のときのバッファ消費率。**単位（0〜1 か 0〜100 か）は未確認** (Q-038)"
+        protects:
+          type: string
+          description: "`kind=buffer` のときの保護対象。現時点は DependencyId"
 
-    ReplacePlanRequest:
+    Dep:
       type: object
-      required: [xml]
+      description: 依存関係。種類や遅延の指定は無い（終了→開始のみ） 🟢
+      required: [from, to]
       properties:
-        xml:
+        from:
           type: string
-          description: 置き換える計画の中身（全文）
+          description: 先行タスクの `id`
+          example: "17:194"
+        to:
+          type: string
+          description: 後続タスクの `id`
+          example: "17:159"
+
+    ParseError:
+      type: object
+      required: [projectId, message]
+      properties:
+        projectId:
+          type: string
+          example: "99"
+        message:
+          type: string
+          example: "No XML file found ..."
+
+    # ---- 以下は未実装の保存 I/F 用（こちらの想定）🔴 ----
+
+    SaveRequest:
+      type: object
+      description: |
+        ⚠️ **こちらの想定です。** サーバ側の保存 I/F は未実装で、
+        差分を送るのか全文を送るのかも決まっていません (Q-015)。
+        画面側は「読み込み時点との差分」を持っているので、差分を送る形を叩き台にしています。
+      properties:
+        revision:
+          type: string
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
 
     ValidationResult:
       type: object
@@ -529,10 +519,6 @@ components:
       properties:
         valid:
           type: boolean
-          description: |
-            エラーが 1 件もなければ `true`。
-
-            **警告だけなら `true` です。** 警告は保存を妨げません。
         issues:
           type: array
           items:
@@ -540,60 +526,32 @@ components:
 
     ValidationIssue:
       type: object
-      required: [severity, code, message]
+      required: [severity, message]
       properties:
         severity:
           type: string
           enum: [error, warning]
-          description: |
-            - `error` — 保存できない。直すまで先へ進めない
-            - `warning` — 保存できる。利用者の判断に委ねる
         code:
           type: string
-          description: 問題の種類
-          example: "CIRCULAR_DEPENDENCY"
         message:
           type: string
-          description: 利用者に見せる説明
-          example: "依存関係が循環しています: T003 → T005 → T003"
-        location:
-          type: object
-          description: 問題のある場所。画面上で該当箇所を示すのに使います
-          properties:
-            taskId:
-              type: string
-              example: "T003"
-            line:
-              type: integer
-              description: XML の行番号
-            column:
-              type: integer
+        taskId:
+          type: string
 
     ErrorResponse:
       type: object
       description: |
-        **すべてのエラーはこの形で返ります。**
-        画面側はこの形だけを扱えばよくなります。
-
-        エラーコードの一覧は `docs/interface/22-errors.md` にあります。
+        ⚠️ **こちらの想定です。** サーバ側の文書にはエラー応答の形の記述がありません (Q-025)。
+        `GET /portfolio` は一部の失敗を 200 の `errors[]` で返すことが分かっています。
       required: [code, message]
       properties:
         code:
           type: string
-          description: 機械が判別するためのコード。**画面側の分岐はこれで行います**
-          example: "PLAN_NOT_FOUND"
+          example: "REVISION_CONFLICT"
         message:
           type: string
-          description: |
-            人が読む説明。
-
-            ⚠️ **この文言をそのまま利用者に見せるかは要検討です。**
-            サーバ側の文言が技術的すぎる場合、画面側で `code` から
-            言い換える必要があります (Q-024)。
-          example: "指定された計画が見つかりません"
         details:
           type: object
-          description: 種類ごとの追加情報
           additionalProperties: true
 
     ConflictError:
@@ -606,38 +564,13 @@ components:
               properties:
                 currentRevision:
                   type: string
-                  description: |
-                    サーバ側が現在持っている版。
-
-                    画面側はこれを見て「自分の版が古い」と判断し、
-                    最新を取り直します。
-                  example: "r9"
                 expectedRevision:
                   type: string
-                  description: 送られてきた `If-Match` の値
-                  example: "r7"
 
   responses:
 
-    BadRequest:
-      description: 要求の形が不正
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-
-    NotFound:
-      description: 指定された計画が見つからない
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-
     UnprocessablePlan:
-      description: |
-        要求の形は正しいが、計画の中身が扱えない。
-
-        XML として壊れている、想定する形式に沿っていない、などの場合です。
+      description: 要求の形は正しいが、計画の中身が扱えない
       content:
         application/json:
           schema:

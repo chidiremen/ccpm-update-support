@@ -1,0 +1,38 @@
+{
+  "_comment": "GET /api/v1/portfolio?projectIds=17 の応答例。サーバ側の I/F 一覧（2026-09-04 受領）の例をそのまま組み合わせたもの 🟢",
+
+  "planId": "bm3-portfolio",
+  "revision": "bm3-2-...",
+  "sourcePath": "C:\\...\\bm3-xml-workbench\\raw",
+  "projects": [
+    { "id": "17", "name": "BEV step3 AMP", "color": "#4a7fd0" }
+  ],
+  "tasks": [
+    {
+      "id": "17:194",
+      "sourceProjectId": "17",
+      "sourceTaskId": "194",
+      "name": "HILS：マイルストーン集約タスク",
+      "kind": "task",
+      "parentId": "17:158",
+      "projectId": "17",
+      "duration": 3,
+      "start": "2024-11-20",
+      "finish": "2024-11-22",
+      "progress": 100,
+      "assignees": ["サウンドPAVCT"],
+      "wbsCode": "194",
+      "priority": "中",
+      "phase": "",
+      "note": ""
+    }
+  ],
+  "deps": [
+    { "from": "17:194", "to": "17:159" }
+  ],
+  "critical": ["17:1", "17:158"],
+  "today": "2026-09-04",
+  "errors": [
+    { "projectId": "99", "message": "No XML file found ..." }
+  ]
+}

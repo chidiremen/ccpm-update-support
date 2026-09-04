@@ -362,18 +362,18 @@ table.grid tr.headrow .hsub { color: var(--text-faint); font-weight: 400; font-s
 .headspan::before { left: 0; }
 .headspan::after  { right: 0; }
 
-/* 担当者別のまとめ行に、その人の作業の帯を重ねて描く。
+/* リソース別のまとめ行に、そのリソースの作業の帯を重ねて描く。
    同じ帯を 1 行に描いているだけで、数値も判定も足していない。
    色はプロジェクト。重なりは重なって見える。 */
 .headbar { position: absolute; top: 8px; height: 10px; border-radius: 2px; opacity: .42; }
 .headbar.cur { opacity: .9; outline: 1.5px solid var(--accent); }
 
-/* 選んだタスクが別の人の欄にも出ているとき（複数人のタスク） */
+/* 選んだタスクが別のリソースの欄にも出ているとき（複数人のタスク） */
 table.grid tr.twin td.cell { background: var(--accent-bg); }
 .twin-tag { font-size: 10px; color: var(--accent); margin-left: 6px; white-space: nowrap; }
 .grow.twin { background: var(--accent-bg); }
 
-/* 担当の付け替え（担当者別で行を別の人の欄へ落とす） */
+/* 担当の付け替え（リソース別で行を別のリソースの欄へ落とす） */
 table.grid tr.assign-target td { box-shadow: inset 0 0 0 1px var(--add); }
 table.grid tr.assign-target.headrow td { background: var(--add-bg); }
 table.grid tr.assign-ng td { box-shadow: inset 0 0 0 1px var(--del); }
@@ -669,12 +669,12 @@ kbd {
 
 <div class="app-head">
   <div class="title-row">
-    <span class="file-name">sample-project.xml</span>
-    <span class="file-meta" id="revLabel">revision r7</span>
+    <span class="file-name">bm3-portfolio</span>
+    <span class="file-meta" id="revLabel">projectIds=17,49,52 ・ revision bm3-2-… ・ <b>読み込み専用</b></span>
     <span class="spacer"></span>
     <button id="btnUndo" class="icon" title="元に戻す (Ctrl+Z)">↶</button>
     <button id="btnRedo" class="icon" title="やり直し (Ctrl+Y)">↷</button>
-    <button id="btnSave" class="primary">保存</button>
+    <button id="btnSave" class="primary" title="サーバ側が書き込みに対応していません（writeEnabled=false）。変更は画面内ドラフトとして残ります">保存（未実装）</button>
   </div>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-screen="gantt" aria-selected="true">ガントチャート</button>
@@ -693,10 +693,10 @@ kbd {
     <span class="tb-sep"></span>
     <span class="hint">並べ方</span>
     <button data-groupby="project" title="プロジェクトごとに、いつもの階層で並べます">プロジェクト別</button>
-    <button data-groupby="person" title="担当者ごとに、その人の全プロジェクトの作業を日程順に並べます">担当者別</button>
+    <button data-groupby="person" title="リソースごとに、そのリソースの全プロジェクトの作業を日程順に並べます">リソース別</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
-    <button id="btnPeople" title="表示する担当者を選びます" hidden>担当者 ▾</button>
-    <button id="btnAdjust" class="adjust" title="選んだ人に特化して、試して・決めて・記録する">調整パネル…</button>
+    <button id="btnPeople" title="表示するリソースを選びます" hidden>リソース ▾</button>
+    <button id="btnAdjust" class="adjust" title="選んだリソースに特化して、試して・決めて・記録する">調整パネル…</button>
     <span class="tb-sep"></span>
     <span class="hint">比率</span>
     <button data-ratio="0.72" title="表を広く">表</button>
@@ -772,8 +772,8 @@ kbd {
     <button id="netFit">全体表示</button>
     <button id="netTidy" title="手で動かした配置を捨てて、自動で並べ直す">整列</button>
     <button class="pfilter" title="表示するプロジェクトを選びます">プロジェクト ▾</button>
-    <button id="netWho" title="選んだ人の作業だけを濃く出します。プロジェクトをまたいで見えます">担当者で強調 ▾</button>
-    <button id="netAdjust" class="adjust" title="選んだ人に特化して、試して・決めて・記録する">調整パネル…</button>
+    <button id="netWho" title="選んだリソースの作業だけを濃く出します。プロジェクトをまたいで見えます">リソースで強調 ▾</button>
+    <button id="netAdjust" class="adjust" title="選んだリソースに特化して、試して・決めて・記録する">調整パネル…</button>
     <span class="tb-sep"></span>
     <button id="netAdd" title="いちばん上の階層にタスクを足す">タスクを追加</button>
     <button id="netDel" title="選択中のタスクを子孫ごと削除する">削除</button>
@@ -832,8 +832,8 @@ kbd {
 /* ============================================================
    1. 項目の定義
 
-   ⚠️ 実物の項目は未確認です (Q-001)。ここは「数十項目ある」という
-      前提を確かめるための架空の定義です。
+   2026-09-04 にサーバ側の I/F 一覧を受領し、実物の項目に差し替えました。
+   docs/interface/received/ に原文があります。
 
    重要な考え方 — 項目を 2 つに分けています:
 
@@ -873,7 +873,7 @@ const projName = id => (PROJ[id] || {}).name || '';
      key      データ上の名前
      label    画面に出す名前
      grp      core = ツールが意味を理解する / pass = 素通し
-     section  ダイアログでの区分け（基本 / 日程 / 体制 / 契約・費用 / 管理 / その他）
+     section  ダイアログでの区分け（基本 / 日程 / 体制 / 管理 / 元データ）
      type     text / multiline / number / date / select / link / parent
      options  select のときの選択肢
      unit     数値に付ける単位
@@ -887,9 +887,9 @@ const FIELDS = [
     help:'図にも表にも出る名前' },
   { key:'kind',    label:'種別',       grp:'core', section:'基本', type:'select', w:88,
     options:['タスク','マイルストン','バッファ'],
-    help:'マイルストンは期間を持たない時点。バッファは余裕時間' },
+    help:'サーバ側の判定は暫定です（TaskType と期間ゼロから推定）' },
   { key:'duration',label:'期間',       grp:'core', section:'日程', type:'number', w:58, unit:'d',
-    help:'変えると完了日も動きます。後続タスクはサーバ側が再計算します' },
+    help:'単位は日（サーバ側で換算済み）。変えると完了日も動きます。後続タスクはサーバ側が再計算します' },
   { key:'start',   label:'着手日',     grp:'core', section:'日程', type:'date',   w:92 },
   { key:'finish',  label:'完了日',     grp:'core', section:'日程', type:'date',   w:92,
     help:'着手日と期間から決まります' },
@@ -897,50 +897,44 @@ const FIELDS = [
     help:'このタスクの前に終わるもの。図の矢印と同じ' },
   { key:'succs',   label:'後続タスク', grp:'core', section:'日程', type:'link',   w:150,
     readonly:true, help:'先行タスクの裏返しなので、ここでは変えられません' },
-  { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%' },
+  { key:'consumed',label:'バッファ消費', grp:'core', section:'日程', type:'number', w:80,
+    help:'バッファのみ。単位は未確認です (Q-038)' },
+  { key:'protects',label:'保護対象',   grp:'core', section:'日程', type:'text',   w:100,
+    readonly:true, help:'バッファのみ。守っている相手（DependencyId）' },
+  { key:'progress',label:'進捗',       grp:'core', section:'基本', type:'number', w:54, unit:'%',
+    help:'暫定値です。BM3 の正式な進捗率ではありません' },
   { key:'parent',  label:'親タスク',   grp:'core', section:'基本', type:'parent', w:150,
     help:'このタスクが属する大分類。「最上位」を選ぶと親から出ます' },
   { key:'project', label:'プロジェクト', grp:'core', section:'基本', type:'select', w:150,
     options: PROJECTS.map(p => p.name),
     help:'色分けと絞り込みに使うため、ツールが意味を理解します。親を変えると親のプロジェクトに揃います' },
-  { key:'assignees', label:'担当',      grp:'core', section:'体制', type:'people', w:110,
-    help:'1 つのタスクに複数人。読点で区切って並べます。担当者別の並べ方はこの項目を見ています' },
+  { key:'assignees', label:'リソース',  grp:'core', section:'体制', type:'people', w:130,
+    help:'BM3 の Skill 名です。人の名前ではありません (Q-039)。読点で区切って複数。リソース別の並べ方はこの項目を見ています' },
 
   // ---- 素通し項目（ツールは意味を解釈せず、そのまま保存する） ----
-  { key:'dept',      label:'部署',       grp:'pass', section:'体制', type:'text',   w:96 },
-  { key:'approver',  label:'承認者',     grp:'pass', section:'体制', type:'text',   w:76 },
-  { key:'location',  label:'作業場所',   grp:'pass', section:'体制', type:'text',   w:96 },
-  { key:'equipment', label:'使用設備',   grp:'pass', section:'体制', type:'text',   w:110 },
-
-  { key:'phase',     label:'工程区分',   grp:'pass', section:'管理', type:'select', w:88,
-    options:['要件','設計','実装','試験','移行','その他'] },
+  { key:'wbsCode',   label:'WBS 番号',   grp:'pass', section:'管理', type:'text',   w:88,
+    help:'BM3 の Task Code' },
   { key:'priority',  label:'優先度',     grp:'pass', section:'管理', type:'select', w:64,
-    options:['高','中','低'] },
-  { key:'reviewReq', label:'レビュー',   grp:'pass', section:'管理', type:'select', w:70,
-    options:['要','不要'] },
-  { key:'wbsCode',   label:'WBS 番号',   grp:'pass', section:'管理', type:'text',   w:88 },
-  { key:'version',   label:'版数',       grp:'pass', section:'管理', type:'text',   w:60 },
-  { key:'tags',      label:'タグ',       grp:'pass', section:'管理', type:'text',   w:120,
-    help:'読点で区切って複数' },
+    options:['高','中'], help:'暫定表示（クリティカルなら 高）' },
+  { key:'phase',     label:'工程区分',   grp:'pass', section:'管理', type:'text',   w:88,
+    help:'現時点は常に空です' },
+  { key:'note',      label:'備考',       grp:'pass', section:'管理', type:'multiline', w:200,
+    help:'BM3 の Memo、またはバッファの情報' },
 
-  { key:'costCode',  label:'費用コード', grp:'pass', section:'契約・費用', type:'text', w:96 },
-  { key:'vendor',    label:'外注先',     grp:'pass', section:'契約・費用', type:'text', w:110 },
-  { key:'contractNo',label:'契約番号',   grp:'pass', section:'契約・費用', type:'text', w:100 },
-  { key:'customer',  label:'顧客',       grp:'pass', section:'契約・費用', type:'text', w:96 },
-
-  { key:'deliverable',label:'成果物',    grp:'pass', section:'その他', type:'text',      w:140 },
-  { key:'estimate',  label:'見積根拠',   grp:'pass', section:'その他', type:'multiline', w:150 },
-  { key:'risk',      label:'リスク',     grp:'pass', section:'その他', type:'multiline', w:140 },
-  { key:'note',      label:'備考',       grp:'pass', section:'その他', type:'multiline', w:200 },
-
-  { key:'createdAt', label:'起票日',     grp:'pass', section:'その他', type:'date', w:92,
-    readonly:true, help:'システムが持つ値です' },
-  { key:'updatedAt', label:'更新日',     grp:'pass', section:'その他', type:'date', w:92,
-    readonly:true, help:'システムが持つ値です' },
+  { key:'createdAt', label:'起票日',     grp:'pass', section:'元データ', type:'date', w:92,
+    readonly:true, help:'プロジェクトの AsOfDate 由来です（タスク個別の値ではありません）' },
+  { key:'updatedAt', label:'更新日',     grp:'pass', section:'元データ', type:'date', w:92,
+    readonly:true, help:'プロジェクトの AsOfDate 由来です' },
+  { key:'sourceProjectId', label:'元 ProjectId', grp:'pass', section:'元データ', type:'text', w:90,
+    readonly:true, help:'BM3 上の識別子' },
+  { key:'sourceTaskId',    label:'元 TaskId',    grp:'pass', section:'元データ', type:'text', w:80,
+    readonly:true, help:'BM3 上の識別子。バッファ行では無いことがあります' },
+  { key:'sourceBufferId',  label:'元 BufferId',  grp:'pass', section:'元データ', type:'text', w:90,
+    readonly:true, help:'MilestoneBuffer 由来の行だけが持ちます' },
 ];
 
 // ダイアログの区分けの並び順。ここにない区分けは末尾へ回ります
-const SECTIONS = ['基本', '日程', '体制', '管理', '契約・費用', 'その他'];
+const SECTIONS = ['基本', '日程', '体制', '管理', '元データ'];
 
 const F = Object.fromEntries(FIELDS.map(f => [f.key, f]));
 const KIND_LABEL = { task:'タスク', milestone:'マイルストン', buffer:'バッファ' };
@@ -948,112 +942,94 @@ const KIND_OF = Object.fromEntries(Object.entries(KIND_LABEL).map(([k,v]) => [v,
 
 /* ============================================================
    2. 架空の計画データ
-   ⚠️ 実物の構造は未確認です (Q-001)。
+   実物では GET /portfolio の JSON がそのまま入ります（docs/interface/20-data-model.md）。
+   id は実物では '{ProjectId}:{TaskId}' の形ですが、モックでは読みやすさのため短くしています。
+   assignees は BM3 の Skill 名（人の名前ではない）なので、それらしい名前にしています (Q-039)。
    ============================================================ */
 function mk(o) {
   return Object.assign({
     kind:'task', parentId:null, projectId:'P1', duration:0, start:'', finish:'', progress:0,
-    assignees:[], dept:'', phase:'', priority:'中', reviewReq:'不要', estimate:'',
-    approver:'', location:'', equipment:'', costCode:'', vendor:'', contractNo:'',
-    customer:'', deliverable:'', risk:'', version:'1.0', wbsCode:'',
-    createdAt:'2026-03-02', updatedAt:'2026-03-30', tags:'', note:'',
+    assignees:[], wbsCode:'', priority:'中', phase:'', note:'',
+    createdAt:'2026-03-30', updatedAt:'2026-03-30',
+    sourceProjectId:'', sourceTaskId:'', sourceBufferId:'',
     consumed:0, protects:''
   }, o);
 }
 
 let tasks = [
   // ── P1 受注管理システム更改 ─────────────────────────────
-  mk({ id:'T001', name:'設計フェーズ', wbsCode:'1', dept:'開発一課' }),
-  mk({ id:'T002', name:'要件定義', parentId:'T001', duration:8, start:'2026-04-01', finish:'2026-04-10',
-       progress:100, assignees:['佐藤'], dept:'開発一課', phase:'要件', priority:'高', reviewReq:'要',
-       estimate:'過去実績 A-12', approver:'部長', location:'本社 3F', deliverable:'要件定義書',
-       wbsCode:'1.1', customer:'株式会社サンプル', tags:'重要' }),
-  mk({ id:'T003', name:'基本設計', parentId:'T001', duration:12, start:'2026-04-13', finish:'2026-04-28',
-       progress:60, assignees:['鈴木','山本'], dept:'開発一課', phase:'設計', priority:'高', reviewReq:'要',
-       estimate:'類似案件比', approver:'課長', location:'本社 3F', deliverable:'基本設計書',
-       wbsCode:'1.2', customer:'株式会社サンプル', risk:'仕様変更の可能性' }),
+  mk({ id:'T001', name:'設計フェーズ', sourceTaskId:'001', wbsCode:'1' }),
+  mk({ id:'T002', name:'要件定義', sourceTaskId:'002', parentId:'T001', duration:8, start:'2026-04-01', finish:'2026-04-10',
+       progress:100, assignees:['制御ソフト'], priority:'高',
+       wbsCode:'1.1' }),
+  mk({ id:'T003', name:'基本設計', sourceTaskId:'003', parentId:'T001', duration:12, start:'2026-04-13', finish:'2026-04-28',
+       progress:60, assignees:['システム設計','設備設計'], priority:'高',
+       wbsCode:'1.2' }),
 
-  mk({ id:'B003', name:'マイルストンバッファ（設計完了）', kind:'buffer', duration:3,
+  mk({ id:'B003', name:'マイルストンバッファ（設計完了）', kind:'buffer', sourceBufferId:'003', duration:3,
        start:'2026-04-29', finish:'2026-05-01', consumed:1, protects:'M001', wbsCode:'1.9' }),
-  mk({ id:'M001', name:'◆ 設計完了', kind:'milestone', duration:0,
+  mk({ id:'M001', name:'◆ 設計完了', sourceTaskId:'101', kind:'milestone', duration:0,
        start:'2026-05-01', finish:'2026-05-01', wbsCode:'1.10', note:'顧客レビュー完了が条件' }),
 
-  mk({ id:'T004', name:'実装フェーズ', wbsCode:'2', dept:'開発二課' }),
+  mk({ id:'T004', name:'実装フェーズ', sourceTaskId:'004', wbsCode:'2' }),
   // 3 階層目。入れ子の中に入れ子がある形を試せるようにしている
-  mk({ id:'T010', name:'画面側', parentId:'T004', wbsCode:'2.1', dept:'開発二課' }),
-  mk({ id:'T005', name:'画面側実装', parentId:'T010', duration:20, start:'2026-05-04', finish:'2026-05-29',
-       assignees:['田中'], dept:'開発二課', phase:'実装', priority:'高', estimate:'画面数 12 × 1.5d',
-       approver:'課長', location:'本社 5F', equipment:'検証機 PC-08', deliverable:'画面一式',
-       wbsCode:'2.1.1', customer:'株式会社サンプル' }),
-  mk({ id:'T011', name:'画面単体試験', parentId:'T010', duration:6, start:'2026-06-01', finish:'2026-06-08',
-       assignees:['田中'], dept:'開発二課', phase:'試験', priority:'中', reviewReq:'要',
-       estimate:'画面数 12 × 0.5d', approver:'課長', location:'本社 5F',
-       deliverable:'単体試験成績書', wbsCode:'2.1.2' }),
-  mk({ id:'T006', name:'サーバ側実装', parentId:'T004', duration:15, start:'2026-05-04', finish:'2026-05-22',
-       assignees:['高橋'], dept:'開発二課', phase:'実装', priority:'中', estimate:'API 数 8 × 1.8d',
-       approver:'課長', location:'在宅', equipment:'検証サーバ SV-02', deliverable:'サーバ一式',
-       wbsCode:'2.2', vendor:'協力会社 B', contractNo:'C-2026-041' }),
+  mk({ id:'T010', name:'画面側', sourceTaskId:'010', parentId:'T004', wbsCode:'2.1' }),
+  mk({ id:'T005', name:'画面側実装', sourceTaskId:'005', parentId:'T010', duration:20, start:'2026-05-04', finish:'2026-05-29',
+       assignees:['画面実装'], priority:'高',
+       wbsCode:'2.1.1' }),
+  mk({ id:'T011', name:'画面単体試験', sourceTaskId:'011', parentId:'T010', duration:6, start:'2026-06-01', finish:'2026-06-08',
+       assignees:['画面実装'], priority:'中', wbsCode:'2.1.2' }),
+  mk({ id:'T006', name:'サーバ側実装', sourceTaskId:'006', parentId:'T004', duration:15, start:'2026-05-04', finish:'2026-05-22',
+       assignees:['サーバ実装'], priority:'中',
+       wbsCode:'2.2' }),
 
-  mk({ id:'B002', name:'合流バッファ', kind:'buffer', duration:4,
+  mk({ id:'B002', name:'合流バッファ', kind:'buffer', sourceBufferId:'002', duration:4,
        start:'2026-06-09', finish:'2026-06-12', consumed:0, protects:'T007', wbsCode:'2.9' }),
 
-  mk({ id:'T007', name:'結合試験', duration:10, start:'2026-06-15', finish:'2026-06-26',
-       assignees:['佐藤','鈴木'], dept:'品質保証課', phase:'試験', priority:'高', reviewReq:'要',
-       estimate:'試験項目 320 件', approver:'部長', location:'試験室', equipment:'試験機一式',
-       deliverable:'試験成績書', wbsCode:'3', customer:'株式会社サンプル', risk:'環境準備の遅れ' }),
+  mk({ id:'T007', name:'結合試験', sourceTaskId:'007', duration:10, start:'2026-06-15', finish:'2026-06-26',
+       assignees:['制御ソフト','システム設計'], priority:'高', wbsCode:'3' }),
 
-  mk({ id:'B001', name:'プロジェクトバッファ', kind:'buffer', duration:10,
+  mk({ id:'B001', name:'プロジェクトバッファ', kind:'buffer', sourceBufferId:'001', duration:10,
        start:'2026-06-29', finish:'2026-07-10', consumed:3, protects:'M002', wbsCode:'4' }),
-  mk({ id:'M002', name:'◆ 納品', kind:'milestone', duration:0,
+  mk({ id:'M002', name:'◆ 納品', sourceTaskId:'102', kind:'milestone', duration:0,
        start:'2026-07-10', finish:'2026-07-10', wbsCode:'5', priority:'高', note:'契約上の納期' }),
 
   /* ── P2 物流センター自動化 ───────────────────────────────
-     人を P1 と共有させています。担当者別に並べたときに
-     「同じ人の作業が別々のプロジェクトで重なっている」ことが
+     人を P1 と共有させています。リソース別に並べたときに
+     「同じリソースの作業が別々のプロジェクトで重なっている」ことが
      見えるかどうかを、この画面で確かめられるようにするためです。 */
-  mk({ id:'P201', name:'調査フェーズ', projectId:'P2', wbsCode:'1', dept:'生産技術課' }),
-  mk({ id:'P202', name:'現地調査', projectId:'P2', parentId:'P201', duration:8,
-       start:'2026-04-06', finish:'2026-04-15', progress:100, assignees:['山本'],
-       dept:'生産技術課', phase:'要件', priority:'高', location:'第二センター',
-       deliverable:'現地調査報告', wbsCode:'1.1', customer:'サンプル物流株式会社' }),
-  mk({ id:'P203', name:'機器選定', projectId:'P2', parentId:'P201', duration:10,
-       start:'2026-04-16', finish:'2026-04-27', progress:80, assignees:['山本','高橋'],
-       dept:'生産技術課', phase:'設計', priority:'高', reviewReq:'要',
-       deliverable:'機器仕様書', wbsCode:'1.2', vendor:'搬送機メーカー C' }),
+  mk({ id:'P201', name:'調査フェーズ', sourceTaskId:'201', projectId:'P2', wbsCode:'1' }),
+  mk({ id:'P202', name:'現地調査', sourceTaskId:'202', projectId:'P2', parentId:'P201', duration:8,
+       start:'2026-04-06', finish:'2026-04-15', progress:100, assignees:['設備設計'], priority:'高', wbsCode:'1.1' }),
+  mk({ id:'P203', name:'機器選定', sourceTaskId:'203', projectId:'P2', parentId:'P201', duration:10,
+       start:'2026-04-16', finish:'2026-04-27', progress:80, assignees:['設備設計','サーバ実装'], priority:'高', wbsCode:'1.2' }),
 
-  mk({ id:'P210', name:'導入フェーズ', projectId:'P2', wbsCode:'2', dept:'生産技術課' }),
-  mk({ id:'P211', name:'搬入・据付', projectId:'P2', parentId:'P210', duration:12,
-       start:'2026-05-07', finish:'2026-05-22', assignees:['中村'], dept:'生産技術課',
-       phase:'移行', priority:'中', location:'第二センター', equipment:'クレーン',
-       wbsCode:'2.1', vendor:'搬送機メーカー C', contractNo:'C-2026-088' }),
-  mk({ id:'P212', name:'制御ソフト調整', projectId:'P2', parentId:'P210', duration:18,
-       start:'2026-05-11', finish:'2026-06-03', assignees:['佐藤','田中'], dept:'開発二課',
-       phase:'実装', priority:'高', estimate:'搬送機 6 台 × 3d',
-       location:'第二センター', wbsCode:'2.2', risk:'現地でしか試せない' }),
+  mk({ id:'P210', name:'導入フェーズ', sourceTaskId:'210', projectId:'P2', wbsCode:'2' }),
+  mk({ id:'P211', name:'搬入・据付', sourceTaskId:'211', projectId:'P2', parentId:'P210', duration:12,
+       start:'2026-05-07', finish:'2026-05-22', assignees:['現地工事'], priority:'中',
+       wbsCode:'2.1' }),
+  mk({ id:'P212', name:'制御ソフト調整', sourceTaskId:'212', projectId:'P2', parentId:'P210', duration:18,
+       start:'2026-05-11', finish:'2026-06-03', assignees:['制御ソフト','画面実装'], priority:'高', wbsCode:'2.2' }),
 
-  mk({ id:'PB21', name:'合流バッファ', kind:'buffer', projectId:'P2', duration:5,
+  mk({ id:'PB21', name:'合流バッファ', kind:'buffer', sourceBufferId:'21', projectId:'P2', duration:5,
        start:'2026-06-04', finish:'2026-06-10', consumed:2, protects:'P220', wbsCode:'2.9' }),
-  mk({ id:'P220', name:'稼働確認', projectId:'P2', duration:8, start:'2026-06-11', finish:'2026-06-22',
-       assignees:['中村','佐藤'], dept:'生産技術課', phase:'試験', priority:'高', reviewReq:'要',
-       location:'第二センター', deliverable:'稼働確認記録', wbsCode:'3' }),
-  mk({ id:'PM21', name:'◆ 稼働開始', kind:'milestone', projectId:'P2', duration:0,
+  mk({ id:'P220', name:'稼働確認', sourceTaskId:'220', projectId:'P2', duration:8, start:'2026-06-11', finish:'2026-06-22',
+       assignees:['現地工事','制御ソフト'], priority:'高', wbsCode:'3' }),
+  mk({ id:'PM21', name:'◆ 稼働開始', sourceTaskId:'221', kind:'milestone', projectId:'P2', duration:0,
        start:'2026-06-23', finish:'2026-06-23', wbsCode:'4', priority:'高', note:'繁忙期前が条件' }),
 
   // ── P3 保守基盤の移行 ───────────────────────────────────
-  mk({ id:'P301', name:'移行計画', projectId:'P3', duration:6, start:'2026-04-20', finish:'2026-04-27',
-       progress:100, assignees:['鈴木'], dept:'情報システム課', phase:'要件', priority:'中',
-       deliverable:'移行計画書', wbsCode:'1' }),
-  mk({ id:'P310', name:'移行フェーズ', projectId:'P3', wbsCode:'2', dept:'情報システム課' }),
-  mk({ id:'P311', name:'データ移行', projectId:'P3', parentId:'P310', duration:14,
-       start:'2026-05-11', finish:'2026-05-28', assignees:['鈴木','高橋'], dept:'情報システム課',
-       phase:'移行', priority:'高', estimate:'表 240 本', location:'在宅',
-       wbsCode:'2.1', risk:'旧環境の停止時間に制約' }),
-  mk({ id:'P312', name:'切替リハーサル', projectId:'P3', parentId:'P310', duration:5,
-       start:'2026-05-29', finish:'2026-06-04', assignees:['高橋'], dept:'情報システム課',
-       phase:'試験', priority:'高', reviewReq:'要', wbsCode:'2.2' }),
-  mk({ id:'PB31', name:'プロジェクトバッファ', kind:'buffer', projectId:'P3', duration:6,
+  mk({ id:'P301', name:'移行計画', sourceTaskId:'301', projectId:'P3', duration:6, start:'2026-04-20', finish:'2026-04-27',
+       progress:100, assignees:['システム設計'], priority:'中', wbsCode:'1' }),
+  mk({ id:'P310', name:'移行フェーズ', sourceTaskId:'310', projectId:'P3', wbsCode:'2' }),
+  mk({ id:'P311', name:'データ移行', sourceTaskId:'311', projectId:'P3', parentId:'P310', duration:14,
+       start:'2026-05-11', finish:'2026-05-28', assignees:['システム設計','サーバ実装'], priority:'高',
+       wbsCode:'2.1' }),
+  mk({ id:'P312', name:'切替リハーサル', sourceTaskId:'312', projectId:'P3', parentId:'P310', duration:5,
+       start:'2026-05-29', finish:'2026-06-04', assignees:['サーバ実装'], priority:'高', wbsCode:'2.2' }),
+  mk({ id:'PB31', name:'プロジェクトバッファ', kind:'buffer', sourceBufferId:'31', projectId:'P3', duration:6,
        start:'2026-06-05', finish:'2026-06-12', consumed:4, protects:'PM31', wbsCode:'3' }),
-  mk({ id:'PM31', name:'◆ 移行完了', kind:'milestone', projectId:'P3', duration:0,
+  mk({ id:'PM31', name:'◆ 移行完了', sourceTaskId:'331', kind:'milestone', projectId:'P3', duration:0,
        start:'2026-06-12', finish:'2026-06-12', wbsCode:'4', note:'保守契約の切替日' }),
 ];
 
@@ -1079,7 +1055,7 @@ const CRITICAL = new Set([
   'P202','P203','P212','PB21','P220','PM21',
   'P301','P311','P312','PB31','PM31',
 ]);
-const TODAY = '2026-05-11';
+const TODAY = '2026-05-11';   // 実物では GET /portfolio の today を使う（画面側の時計は使わない）
 
 // 読み込み時点の状態。差分の計算に使う（UI-DIFF-01）
 const ORIGINAL = JSON.parse(JSON.stringify({ tasks, deps }));
@@ -1099,9 +1075,9 @@ const state = {
   screen: 'gantt',
   // 担当はタスク名の隣に置く。リソースの調整で最初に見る列だから
   cols: ['name','assignees','kind','duration','start','finish','preds','phase','progress','wbsCode'],
-  groupBy: 'project',          // project = プロジェクト別 / person = 担当者別
+  groupBy: 'project',          // project = プロジェクト別 / person = リソース別
   hiddenProjects: new Set(),   // 表示しないプロジェクト
-  hiddenPeople: new Set(),     // 担当者別で表示しない人（'' は担当なし）
+  hiddenPeople: new Set(),     // リソース別で表示しない人（'' は担当なし）
   whoFocus: null,              // ネットワーク図で強調する人
   adjNotes: {},                // 調整メモ（画面側だけに残る。Q-037）
   cur: { r:0, c:0 },       // カーソル位置（行・列）
@@ -1229,7 +1205,7 @@ function rowsByProject() {
   return out;
 }
 
-/* 担当者別 — 人を親にして、その人の全プロジェクトの作業を日程順に並べる。
+/* リソース別 — 人を親にして、そのリソースの全プロジェクトの作業を日程順に並べる。
 
    **リソースの調整をするための並べ方です。**
    プロジェクト別の表をいくら眺めても「この人が同じ時期に
@@ -1267,12 +1243,12 @@ function rowsByPerson() {
   put(SYNTH + 'who:', '担当なし', leaves.filter(t => !(t.assignees || []).length), '');
   return out;
 }
-// 担当者別に出てくる人の一覧（絞り込みの選択肢に使う）
+// リソース別に出てくる人の一覧（絞り込みの選択肢に使う）
 function allPeople() {
   const leaves = tasks.filter(t => inView(t) && !isGroup(t));
   return [...new Set(leaves.flatMap(t => t.assignees || []))].sort((a, b) => a.localeCompare(b, 'ja'));
 }
-// 担当者別で、その行がどの人の欄にあるか（直前のまとめ行を見る）
+// リソース別で、その行がどの人の欄にあるか（直前のまとめ行を見る）
 function whoOfRow(rs, r) {
   for (let i = r; i >= 0; i--) if (rs[i] && rs[i]._synthetic) return rs[i]._who ?? null;
   return null;
@@ -1667,7 +1643,7 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
     const pc = row._color || (PROJ[row.projectId] || {}).color || '';
     const ps = pc ? ` style="--proj:${pc}"` : '';
     if (row._synthetic && row._who !== undefined) {
-      /* 担当者のまとめ行には、その人の作業の帯をそのまま重ねて描く。
+      /* リソースのまとめ行には、そのリソースの作業の帯をそのまま重ねて描く。
          畳んだままでも「どの時期に何本重なっているか」が色（プロジェクト）で見える。
          同じ帯を 1 行に描いているだけで、数値も判定も足していない。 */
       const bars = withData(ds, () => (row._memberIds || []).map(byId).filter(Boolean).map(t => {
@@ -1750,7 +1726,7 @@ function handleHtml() {
 function drawDeps(n, ds, list, x, cs) {
   const svg = document.getElementById('deplayer' + n);
   if (!svg) return;
-  // 担当者別では同じタスクが複数の行に出るため、線を引く先が定まらない。
+  // リソース別では同じタスクが複数の行に出るため、線を引く先が定まらない。
   // 無理に引くと嘘の線になるので引かない。
   if (personMode()) { svg.innerHTML = ''; return; }
   const idx = Object.fromEntries(list.map((t, i) => [t.id, i]));
@@ -2143,7 +2119,7 @@ function drawNet(n, ds, cs, isBefore) {
     related.add(curId);
     ed.forEach(d => { if (d.from === curId) related.add(d.to); if (d.to === curId) related.add(d.from); });
   }
-  // 「担当者で強調」— その人の作業でないものを薄くする
+  // 「リソースで強調」— そのリソースの作業でないものを薄くする
   const hasWho = t => !!state.whoFocus && (t.assignees || []).includes(state.whoFocus);
   // クリティカルチェーンが中を通る枠は、枠も強調する
   const ccBox = id => !isProjBox(id) && (CRITICAL.has(id) ||
@@ -2241,11 +2217,11 @@ function drawNet(n, ds, cs, isBefore) {
 /* ============================================================
    10. 差分（読み込み時点との実比較）— UI-DIFF-01
    ============================================================ */
-const DIFF_KEYS = FIELDS.map(f => f.key).filter(k => !['preds','succs','kind','project'].includes(k))
-  .concat(['kind','consumed','protects','parentId','projectId']);
+const DIFF_KEYS = [...new Set(FIELDS.map(f => f.key).filter(k => !['preds','succs','kind','project'].includes(k))
+  .concat(['kind','parentId','projectId']))];
 
 // 項目定義に無いもの（内部の持ち方）の表示名と、値の読み替え
-const EXTRA_LABEL = { parentId:'親タスク', projectId:'プロジェクト', consumed:'消費', protects:'保護対象' };
+const EXTRA_LABEL = { parentId:'親タスク', projectId:'プロジェクト' };
 const diffShow = (k, v) => {
   if (v === '' || v === undefined || v === null) return '';
   if (k === 'projectId') return projName(v) || v;
@@ -2287,7 +2263,9 @@ function renderDiff() {
   const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   let h = `<summary>変更内容の一覧 — ${d.total ? d.total + ' 件' : '変更なし'}</summary>`;
   h += `<div class="diff-head"><strong>${d.total ? d.total + ' 件の変更があります' : '変更はありません'}</strong>
-    <span class="spacer"></span><button>検証</button><button class="primary">保存</button></div>`;
+    <span class="spacer"></span><button disabled title="サーバ側で未実装 (Q-014)">検証</button><button class="primary" disabled title="サーバ側で未実装 (Q-015)">保存</button></div>
+    <div class="impact"><strong>サーバ側が書き込みに対応するまで、保存できません</strong>（<code>GET /meta</code> の <code>writeEnabled=false</code>、UI-DIFF-09）。<br>
+      変更は画面内ドラフトとして残り、ブラウザを閉じると消えます。</div>`;
 
   if (!d.total) {
     h += `<div class="nochange">表のセルを編集すると、ここに変更内容が出ます。<br>
@@ -2643,10 +2621,10 @@ function outdent() {
    ============================================================ */
 const INDENT_PX = 14;   // 1 段あたりの横幅。表の描画と合わせる
 
-/* 担当者別で行を掴んだら「担当の付け替え」(UI-GANTT-28)。
+/* リソース別で行を掴んだら「担当の付け替え」(UI-GANTT-28)。
 
    リソースの調整とは、結局「この作業を誰に持ってもらうか」を決めること。
-   担当者別の表で、行を別の人の欄へ落とす — それがそのまま担当の変更になる。
+   リソース別の表で、行を別のリソースの欄へ落とす — それがそのまま担当の変更になる。
    セルで「佐藤」を「山本」に打ち直すのと同じ結果だが、
    表を見ながら動かせるほうが、調整の場では圧倒的に速い。
 
@@ -2729,7 +2707,7 @@ function startAssignDrag(startRow, ev) {
 function startRowDrag(startRow, ev) {
   ev.preventDefault();
   const rs = rows();
-  if (personMode()) { startAssignDrag(startRow, ev); return; }   // 担当者別では担当の付け替え
+  if (personMode()) { startAssignDrag(startRow, ev); return; }   // リソース別では担当の付け替え
   if (isSynth(rs[startRow])) return;                               // まとめ行そのものは動かせない
 
   // 選択範囲にかかっていれば範囲ごと、そうでなければその行だけ動かす
@@ -2965,8 +2943,8 @@ function openProperties(taskId) {
    14.8 調整パネル — 1 人に特化して「試して、決めて、記録する」(UI-ADJ-*)
 
    リソースの調整は会議で決まる。会議に要るのは、
-     1. 全員が同じ絵を見ていること（その人の作業を、プロジェクトのレーンに分けて 1 本の時間軸で）
-     2. その場で案を試せること（帯を引きずる・別の人へ振る）
+     1. 全員が同じ絵を見ていること（そのリソースの作業を、プロジェクトのレーンに分けて 1 本の時間軸で）
+     2. その場で案を試せること（帯を引きずる・別のリソースへ振る）
      3. 「やっぱり無し」ができること（適用を押すまで計画に入らない。破棄で全部戻る）
      4. 決めたことが残ること（変更の一覧と調整メモ）
 
@@ -2993,7 +2971,7 @@ function openAdjust(who) {
     <div class="modal-head">
       <h2>${esc(who)} の調整</h2><span class="hint" id="adjSub"></span>
       <span class="spacer"></span>
-      <span class="hint">帯を横に引きずって日程を試す ／ 帯を選んで、右で別の人へ</span>
+      <span class="hint">帯を横に引きずって日程を試す ／ 帯を選んで、右で別のリソースへ</span>
     </div>
     <div class="modal-body adj-body">
       <div class="adj-left">
@@ -3030,7 +3008,7 @@ function openAdjust(who) {
     const sub = q('#adjSub');
     const projs = [...new Set(ts.map(t => t.projectId))].map(projName);
     sub.textContent = ts.length ? `${ts.length} 件 ・ ${projs.join(' / ')}` : '作業なし';
-    if (!ts.length) { tl.innerHTML = '<p class="none" style="padding:24px">この人の作業はありません（すべて別の人へ移しました）</p>'; return; }
+    if (!ts.length) { tl.innerHTML = '<p class="none" style="padding:24px">このリソースの作業はありません（すべて別のリソースへ移しました）</p>'; return; }
 
     // 目盛り: 週（月曜）。詰まっていたら月
     let axis = '<div class="adj-axis">';
@@ -3101,8 +3079,8 @@ function openAdjust(who) {
       </div>
       ${succs.length ? '<p class="hint" style="margin:8px 0 0">後続の日程は、サーバ側の再計算で決まります（ここでは動きません）</p>' : ''}
       ${isMine ? `<div class="adj-actions">
-        <select data-adjto><option value="">別の人へ移す…</option>${people.map(n => `<option>${esc(n)}</option>`).join('')}</select>
-        <button data-adjadd>${esc(who)} は残したまま、人を加える…</button>
+        <select data-adjto><option value="">別のリソースへ移す…</option>${people.map(n => `<option>${esc(n)}</option>`).join('')}</select>
+        <button data-adjadd>${esc(who)} は残したまま、リソースを加える…</button>
         <button data-adjdrop>${esc(who)} の担当から外す</button>
       </div>` : ''}`;
   };
@@ -3117,7 +3095,7 @@ function openAdjust(who) {
             <span class="old">${esc(diffShow(k, b[k])) || '（空）'}</span> → <span class="new">${esc(diffShow(k, t[k])) || '（空）'}</span></div>`);
       });
     });
-    q('#adjChanges').innerHTML = items.length ? items.join('') : '<div class="none">まだ何も変えていません。帯を引きずるか、別の人へ移すと、ここに残ります。</div>';
+    q('#adjChanges').innerHTML = items.length ? items.join('') : '<div class="none">まだ何も変えていません。帯を引きずるか、別のリソースへ移すと、ここに残ります。</div>';
     q('#adjNotice').textContent = '';
   };
   const renderAllAdj = () => { renderTl(); renderRight(); renderChanges(); };
@@ -3144,7 +3122,7 @@ function openAdjust(who) {
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   });
 
-  // --- 右側の操作（別の人へ / 加える / 外す / 日付）
+  // --- 右側の操作（別のリソースへ / 加える / 外す / 日付）
   q('#adjRight').addEventListener('change', e => {
     const t = sel && byId(sel); if (!t) return;
     if (e.target.matches('[data-adjstart]')) { setVal(t, 'start', e.target.value); renderAllAdj(); }
@@ -3159,7 +3137,7 @@ function openAdjust(who) {
     if (e.target.closest('[data-adjadd]')) {
       const el = e.target.closest('[data-adjadd]');
       const cands = allPeople().filter(n => !(t.assignees || []).includes(n));
-      openPickPerson(el, cands, n => { t.assignees = (t.assignees || []).concat([n]); renderAllAdj(); }, '加える人');
+      openPickPerson(el, cands, n => { t.assignees = (t.assignees || []).concat([n]); renderAllAdj(); }, '加えるリソース');
     }
   });
   q('#adjMemo').addEventListener('input', e => { state.adjNotes[who] = e.target.value; });
@@ -3191,7 +3169,7 @@ function openPickPerson(anchorEl, names, cb, title) {
   const pop = document.createElement('div');
   pop.className = 'pop';
   pop.style.zIndex = 120;   // ダイアログの上に出す
-  pop.innerHTML = `<div class="pop-head">${esc(title || '誰の調整パネルを開きますか')}</div><div class="pop-body">` +
+  pop.innerHTML = `<div class="pop-head">${esc(title || 'どのリソースの調整パネルを開きますか')}</div><div class="pop-body">` +
     (names.length ? names.map(n => `<div class="pop-item" data-pick="${esc(n)}">${esc(n)}</div>`).join('')
                   : '<div class="pop-empty">候補がありません</div>') + '</div>';
   document.getElementById('popLayer').appendChild(pop);
@@ -3221,8 +3199,8 @@ function markAdjust() {
   document.querySelectorAll('button.adjust').forEach(b => {
     b.disabled = !names.length;
     b.textContent = names.length === 1 ? `「${names[0]}」の調整パネル…` : '調整パネル…';
-    b.title = names.length ? '選んだ人に特化して、試して・決めて・記録する'
-                           : '担当のある行か、担当者のまとめ行を選ぶと開けます';
+    b.title = names.length ? '選んだリソースに特化して、試して・決めて・記録する'
+                           : '担当のある行か、リソースのまとめ行を選ぶと開けます';
   });
 }
 
@@ -3480,7 +3458,7 @@ function openProjects(anchorEl) {
   });
 }
 
-// 担当者別で、表示する人を選ぶ (UI-GANTT-29)。プロジェクトの絞り込みと同じ作り
+// リソース別で、表示する人を選ぶ (UI-GANTT-29)。プロジェクトの絞り込みと同じ作り
 function openPeople(anchorEl) {
   closePop();
   const pop = document.createElement('div');
@@ -3489,7 +3467,7 @@ function openPeople(anchorEl) {
   const count = who => tasks.filter(t => inView(t) && !isGroup(t)
     && (who === '' ? !(t.assignees || []).length : (t.assignees || []).includes(who))).length;
   const draw = () => {
-    pop.innerHTML = `<div class="pop-head">表示する担当者</div><div class="pop-body">` +
+    pop.innerHTML = `<div class="pop-head">表示するリソース</div><div class="pop-body">` +
       people.map(([who, label]) => `<label class="pop-item"><input type="checkbox" data-who="${esc(who)}"
         ${state.hiddenPeople.has(who) ? '' : 'checked'}><span>${esc(label)}</span>
         <span class="sub">${count(who)}</span></label>`).join('') +
@@ -3507,16 +3485,16 @@ function openPeople(anchorEl) {
   });
 }
 
-// ネットワーク図で「この人の作業だけ濃く」(UI-NET-19)
+// ネットワーク図で「このリソースの作業だけ濃く」(UI-NET-19)
 function openWhoFocus(anchorEl) {
   closePop();
   const pop = document.createElement('div');
   pop.className = 'pop';
-  pop.innerHTML = `<div class="pop-head">担当者で強調</div><div class="pop-body">` +
+  pop.innerHTML = `<div class="pop-head">リソースで強調</div><div class="pop-body">` +
     `<div class="pop-item${state.whoFocus ? '' : ' active'}" data-who="">（強調しない）</div>` +
     allPeople().map(n => `<div class="pop-item${state.whoFocus === n ? ' active' : ''}" data-who="${esc(n)}">${esc(n)}
       <span class="sub">${tasks.filter(t => inView(t) && (t.assignees || []).includes(n)).length}</span></div>`).join('') +
-    `</div><div class="pop-foot">その人の作業が、プロジェクトをまたいで浮き上がります</div>`;
+    `</div><div class="pop-foot">そのリソースの作業が、プロジェクトをまたいで浮き上がります</div>`;
   document.getElementById('popLayer').appendChild(pop);
   placePop(pop, anchorEl);
   pop.addEventListener('click', e => {
@@ -3527,7 +3505,7 @@ function openWhoFocus(anchorEl) {
 }
 function markWhoFocus() {
   const b = document.getElementById('netWho');
-  b.textContent = state.whoFocus ? `「${state.whoFocus}」を強調中 ×` : '担当者で強調 ▾';
+  b.textContent = state.whoFocus ? `「${state.whoFocus}」を強調中 ×` : 'リソースで強調 ▾';
   b.setAttribute('aria-pressed', String(!!state.whoFocus));
 }
 
@@ -3599,7 +3577,7 @@ document.getElementById('grid').addEventListener('pointerdown', e => {
     e.preventDefault();
     if (doubleTap('rn:' + r)) {
       const t = rows()[r];
-      if (t && t._synthetic && t._who) openAdjust(t._who);      // 担当者のまとめ行 → 調整パネル
+      if (t && t._synthetic && t._who) openAdjust(t._who);      // リソースのまとめ行 → 調整パネル
       else if (t) openProperties(t.id);
       return;
     }
@@ -3873,7 +3851,7 @@ document.getElementById('allDeps').onchange = e => { state.allDeps = e.target.ch
 
 /* 並べ方の切り替え (UI-GANTT-27)。
 
-   担当者別では、行の挿入・削除・階層の変更・行のドラッグ・依存の線を
+   リソース別では、行の挿入・削除・階層の変更・行のドラッグ・依存の線を
    効かせません。人の下の並びには意味がないからです。
    押せてしまうと「できるのにできない」という嘘になるので、見た目でも止めます。
    **セルの編集はできます**（出ているのは同じタスクの実体そのものです）。 */
@@ -3897,13 +3875,13 @@ function markGroupBy() {
   Object.entries(LOCKED_IN_PERSON).forEach(([id, what]) => {
     const el = document.getElementById(id);
     el.disabled = person;
-    el.title = person ? `担当者別では${what}はできません（プロジェクト別に切り替えてください）`
+    el.title = person ? `リソース別では${what}はできません（プロジェクト別に切り替えてください）`
                       : el.dataset.title0;
   });
   document.getElementById('btnPeople').hidden = !person;
   document.getElementById('ganttHint').innerHTML = person
-    ? '同じ人の作業を、全プロジェクトまとめて日程順に並べています。'
-      + '<b>行番号を掴んで別の人の欄へ落とすと担当が移ります</b>／セルの編集もできます／並べ替え・階層・依存の線はできません'
+    ? '同じリソースの作業を、全プロジェクトまとめて日程順に並べています。'
+      + '<b>行番号を掴んで別のリソースの欄へ落とすと担当が移ります</b>／セルの編集もできます／並べ替え・階層・依存の線はできません'
     : 'セルを選んで直接入力 / <kbd>Alt</kbd>+<kbd>←→</kbd> で階層 / 行番号をダブルクリックで全項目';
 }
 document.querySelectorAll('.pfilter').forEach(b => b.onclick = e => openProjects(e.currentTarget));

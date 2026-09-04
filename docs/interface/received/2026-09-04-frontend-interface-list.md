@@ -9,10 +9,10 @@
 | 項目 | 内容 |
 |---|---|
 | 受領日 | 2026-09-04 |
-| 受け取り方 | 画面の写真（5 枚、1 投目。**2 投目が続く**） |
+| 受け取り方 | 画面の写真（全 8 枚。1 投目 5 枚 + 2 投目 3 枚） |
 | 元の文書 | サーバ側リポジトリ `bm3-xml-workbench/docs/frontend-interface-list.md`（ブランチ `release`） |
-| 写真の控え | [`2026-09-04-photos/`](2026-09-04-photos/) `batch1-01.jpg` 〜 `batch1-05.jpg`（縮小版） |
-| 写し取った範囲 | 元の文書の **1〜159 行目**（`tasks[]` の例の途中まで） |
+| 写真の控え | [`2026-09-04-photos/`](2026-09-04-photos/) `batch1-01〜05.jpg`、`batch2-06〜08.jpg`（縮小版） |
+| 写し取った範囲 | 元の文書の **全体（1〜275 行目）** |
 | 確定度 | 🟢 — サーバ側の文書そのもの。ただし写真からの書き起こしなので、下の「読み取りに自信がない箇所」を参照 |
 
 ## 読み取りに自信がない箇所
@@ -20,11 +20,13 @@
 - 89 行目 `"revision": "bm3-2-..."` — 元の文書でも `...` と省略されているように見える。実際の形式は不明
 - 90 行目 `"sourcePath"` — Windows のパス。`\\` の数は写真では確かめられない
 - 114 行目 `"color"` の前に色見本の四角が写っているが、これはエディタの表示であって文書の内容ではないと判断した
+- 227 行目「循環承認」— 「承認」の 2 文字に自信がない。「循環参照」の可能性あり
+- 186〜187 行目（`critical[]` の例を閉じる 2 行）は写真の継ぎ目で写っていない。`]` と ``` と推定して補った
 - 上記以外は判読できた
 
 ---
 
-## 書き起こし（1〜159 行目）
+## 書き起こし（全文）
 
 ````markdown
 # フロントエンド移管用 I/F 一覧
@@ -186,6 +188,121 @@ Response:
   "finish": "2024-11-22",
   "progress": 100,
   "assignees": ["サウンドPAVCT"],
+  "wbsCode": "194",
+  "priority": "中",
+  "phase": "",
+  "note": ""
+}
+```
+
+#### `deps[]`
+
+| Field | 型 | 意味 |
+|---|---|---|
+| `from` | string | 先行タスクID。 |
+| `to` | string | 後続タスクID。 |
+
+例:
+
+```json
+{ "from": "17:194", "to": "17:159" }
+```
+
+#### `critical[]`
+
+クリティカルチェーン上のタスクID配列。`tasks[].id` と一致する。
+
+```json
+["17:1", "17:158"]
+```
+
+#### `errors[]`
+
+一部プロジェクトのXML解析に失敗した場合に入る。空配列なら正常。
+
+```json
+[
+  { "projectId": "99", "message": "No XML file found ..." }
+]
+```
+
+## 互換I/F
+
+### GET `/api/v1/portfolio-mock`
+
+`/api/v1/portfolio` と同じレスポンスを返す互換エイリアス。今後のフロント開発では `/api/v1/portfolio` を使うこと。
+
+## 既存PoC用API（必要な場合のみ）
+
+| API | 用途 | 備考 |
+|---|---|---|
+| `GET /api/matrix` | マトリクス用集計 | 既存トップ画面用。 |
+| `GET /api/selection` | 選択範囲のガント/ネットワーク/リソース詳細 | 既存トップ画面用。 |
+| `GET /api/impact` | 割り込み影響候補 | 既存PoC用。ProjectIdとSkillCodeが必要。 |
+| `GET /api/skills` | スキル一覧 | 機能軸設定画面用。 |
+| `GET /api/config/function-teams` | 機能軸設定取得 | 既存トップ画面用。 |
+| `PUT /api/config/function-teams` | 機能軸設定保存 | JSON設定を書き換える。 |
+
+新GUIの通常表示では、まず `/api/v1/portfolio` だけ使えばよい。
+
+## 保存・更新I/F（未実装）
+
+現時点では、次の操作はサーバI/F未確定。
+
+- BM3 XMLへのタスク追加
+- BMD生成
+- BM3アプリでの保存支援
+- 横断リンクの永続保存
+- `Quantity=0` の割り込みタスク生成
+- タスク分割
+- 循環承認
+
+フロント側で保存ボタンや反映ボタンを置く場合は、必ず未実装またはドラフト保存に留めること。
+
+## フロント側に期待する実装境界
+
+フロント側で自由に作ってよいもの:
+
+- ガントの見た目、ズーム、スクロール、行高さ
+- ネットワーク図の配置、折りたたみ、ドラッグ操作
+- 表編集、キーボード操作、IME対応
+- 選択状態、差分表示、Undo/Redo
+- 画面内ドラフト
+
+サーバI/Fに合わせる必要があるもの:
+
+- 起動時に `/api/v1/portfolio` を読む
+- `projectIds` クエリを保持してAPIへ渡す
+- `projects/tasks/deps/critical` のIDを変更せず内部状態へ入れる
+- `revision` を保持する（将来保存I/Fで使用予定）
+- `writeEnabled=false` の間はサーバ保存をしない
+
+## 既知の注意点
+
+- `projectIds` 未指定で全47案件を取得すると重い。ホストやトップ画面からは原則ProjectIdを渡す。
+- `teamId` は現時点では新GUIの主APIでは未使用。将来の機能軸フィルタ用に予約している。
+- `progress` はBM3の正式進捗率ではなく、期間と残日数からの暫定派生値。
+- `kind` の判定は暫定。BM3のTaskTypeと期間ゼロ情報から推定している。
+- バッファは `tasks[]` に `kind=buffer` として混ぜている。元はBM3の `MilestoneBuffer`。
+- フロント側でタスクIDを作り替えないこと。`{ProjectId}:{TaskId}` は依存関係・クリティカル判定のキーでもある。
+
+## 最小接続例
+
+```js
+async function loadPlan() {
+  const params = new URLSearchParams(location.search);
+  const response = await fetch(`/api/v1/portfolio?${params}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+
+  // 以降はフロント側の状態管理に合わせて取り込む
+  projects = data.projects;
+  tasks = data.tasks;
+  deps = data.deps;
+  critical = new Set(data.critical);
+  revision = data.revision;
+}
+```
 ````
 
-（159 行目まで。160 行目以降は 2 投目に続く）
+（275 行目まで。以上で全文）

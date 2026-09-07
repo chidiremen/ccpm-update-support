@@ -889,7 +889,7 @@ const FIELDS = [
     options:['タスク','マイルストン','バッファ'],
     help:'サーバ側の判定は暫定です（TaskType と期間ゼロから推定）' },
   { key:'duration',label:'期間',       grp:'core', section:'日程', type:'number', w:58, unit:'d',
-    help:'営業日。土日を飛ばして完了日が決まります（祝日は未対応 Q-041）。後続タスクはサーバ側が再計算します' },
+    help:'営業日。土日と会社の休業日を飛ばして完了日が決まります。後続タスクはサーバ側が再計算します' },
   { key:'start',   label:'着手日',     grp:'core', section:'日程', type:'date',   w:92 },
   { key:'finish',  label:'完了日',     grp:'core', section:'日程', type:'date',   w:92,
     help:'着手日と期間から決まります' },
@@ -1117,9 +1117,16 @@ const d2n = s => s ? Date.parse(s + 'T00:00:00Z') : NaN;
 const n2s = n => new Date(n).toISOString().slice(0,10);
 const fmtMD = n => { const d = new Date(n); return (d.getUTCMonth()+1) + '/' + d.getUTCDate(); };
 
-/* 期間は「営業日」。土日を飛ばして数える。
-   祝日や会社の休業日は、いまのところ情報が無いので飛ばさない (Q-041)。 */
-const isWorkday = n => { const d = new Date(n).getUTCDay(); return d !== 0 && d !== 6; };
+/* 期間は「営業日」。土日と、会社の休業日を飛ばして数える。
+
+   休業日の暦は BM3 側にある見込みで、実物では GET /portfolio の応答に
+   足してもらう要望を出している (Q-041)。ここでは架空の休業日を置いている。
+   暦が変わっても、直すのはこの集合だけで済む。 */
+const HOLIDAYS = new Set([
+  '2026-04-29', '2026-05-04', '2026-05-05', '2026-05-06',   // 昭和の日・連休
+  '2026-06-12',                                             // 架空の会社休業日
+]);
+const isWorkday = n => { const d = new Date(n).getUTCDay(); return d !== 0 && d !== 6 && !HOLIDAYS.has(n2s(n)); };
 function addWorkdays(startN, days) {        // 着手日を 1 日目と数えて、days 営業日目の日付
   let n = startN, left = Math.max(1, days);
   while (!isWorkday(n)) n += DAY;
@@ -1585,8 +1592,9 @@ function drawSide(n, ds, list, A, x, totalW, cs, isBefore) {
   }
   if (tick === 'day') {
     for (let t = A.start; t <= A.end; t += DAY) {
-      const wd = new Date(t).getUTCDay(), we = (wd === 0 || wd === 6);
-      ax += `<div class="axis-week" style="left:${x(t)}px;width:${state.dayW}px;opacity:${we ? .4 : 1}">${new Date(t).getUTCDate()}</div>`;
+      const off = !isWorkday(t);   // 土日と休業日は薄く
+      ax += `<div class="axis-week" style="left:${x(t)}px;width:${state.dayW}px;opacity:${off ? .4 : 1}"
+               title="${HOLIDAYS.has(n2s(t)) ? '休業日' : ''}">${new Date(t).getUTCDate()}</div>`;
     }
   } else if (tick === 'week') {
     let w0 = A.start;
